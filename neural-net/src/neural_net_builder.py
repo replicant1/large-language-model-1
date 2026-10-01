@@ -25,8 +25,8 @@ class NeuralNetBuilder:
             for from_neuron in current_layer_neurons:
                 for to_neuron in next_layer_neurons:
                     synapse = Synapse(f"{from_neuron.id}_to_{to_neuron.id}")
-                    from_neuron.synapses_out.append(synapse)
-                    to_neuron.synapses_in.append(synapse)
+                    synapse.from_neuron = from_neuron
+                    synapse.to_neuron = to_neuron
         
         return NeuralNet(self.neurons)
     
