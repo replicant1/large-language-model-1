@@ -3,7 +3,7 @@ from neuron import Neuron
 from synapse import Synapse
 
 class TestNeuron(unittest.TestCase):
-    def test_create_neuron_non_empty_i(self):
+    def test_create_neuron_non_empty_id(self):
         neuron = Neuron("test_neuron")
         self.assertEqual(neuron.id, "test_neuron")
         self.assertEqual(neuron.value, 0)
@@ -24,6 +24,14 @@ class TestNeuron(unittest.TestCase):
         
         self.assertEqual(len(neuron1.synapses_out), 1)
         self.assertEqual(neuron1.synapses_out[0].to_neuron, synapse_from_1_to_2.to_neuron)
+        
+    def test_synapse_in_to_neuron(self):
+        neuron2 = Neuron("neuron2")
+        synapse_from_1_to_2 = Synapse("neuron1_to_neuron2")
+        neuron2.synapses_in.append(synapse_from_1_to_2)
+
+        self.assertEqual(len(neuron2.synapses_in), 1)
+        self.assertEqual(neuron2.synapses_in[0].from_neuron, synapse_from_1_to_2.from_neuron)
     
 
 if __name__ == "__main__":

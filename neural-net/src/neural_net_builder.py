@@ -1,5 +1,6 @@
 from neuron import Neuron
 from neural_net import NeuralNet
+from synapse import Synapse
 
 class NeuralNetBuilder:
     def __init__(self, neuron_count_per_layer: list[int]):
@@ -17,13 +18,15 @@ class NeuralNetBuilder:
                 neuron = Neuron(f"neuron_{neuron_index}_layer_{layer_index}")
                 self.neurons.append(neuron)
                 
-        # Connect each neuron in layer n to each neuron in layer n+1
+        # Connect each neuron in layer n to each neuron in layer n+1 via synapse 
         for layer_index in range(len(self.neuron_count_per_layer) - 1):
             current_layer_neurons = self._neurons_in_layer(layer_index)
             next_layer_neurons = self._neurons_in_layer(layer_index + 1)
             for from_neuron in current_layer_neurons:
                 for to_neuron in next_layer_neurons:
-                    from_neuron.connect_to(to_neuron)
+                    synapse = Synapse(f"{from_neuron.id}_to_{to_neuron.id}")
+                    from_neuron.synapses_out.append(synapse)
+                    to_neuron.synapses_in.append(synapse)
         
         return NeuralNet(self.neurons)
     
