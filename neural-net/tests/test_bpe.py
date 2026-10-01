@@ -1,0 +1,59 @@
+import unittest
+
+from bpe import BPETokenizer
+
+class TestBPETokenizer(unittest.TestCase):
+    def setUp(self):
+        self.tokenizer = BPETokenizer()
+
+    def test_count_words_short_string(self):
+        text = "the cat sat!"
+        word_counts = self.tokenizer.count_words(text)
+        print(f"output from bpe tokenizer = {word_counts}")  
+        self.assertEqual(1, word_counts["the"])
+        self.assertEqual(1, word_counts["cat"])
+        self.assertEqual(1, word_counts["sat"])
+        self.assertEqual(1, word_counts["!"])
+        self.assertEqual(2, word_counts[" "])
+        
+    def test_count_words_medium_string(self):
+        text = "the cat sat on the mat."
+        word_counts = self.tokenizer.count_words(text)
+        print(f"output from bpe tokenizer = {word_counts}")  
+        self.assertEqual(2, word_counts["the"])
+        self.assertEqual(1, word_counts["cat"])
+        self.assertEqual(1, word_counts["sat"])
+        self.assertEqual(1, word_counts["on"])
+        self.assertEqual(1, word_counts["mat"])
+        self.assertEqual(1, word_counts["."])
+        self.assertEqual(5, word_counts[" "])
+
+    def test_count_words_empty_string(self):
+        text = ""
+        word_counts = self.tokenizer.count_words(text)
+        self.assertEqual(0, len(word_counts))
+        
+    def test_merge_character_pairs_to_tokens(self):
+        input_tokens = ["c", "a", "t", "s"]
+        char_pair = ("c", "a")
+        when_merged = "ca" # the character pair "c" and "a" merge into "ca"
+        merged_tokens = self.tokenizer.merge_character_pairs_to_tokens(input_tokens, char_pair, when_merged)
+        print(f"output from merge_character_pairs_to_tokens = {merged_tokens}")
+        self.assertEqual(["ca", "t", "s"], merged_tokens)
+        
+    def test_merge_character_pairs_to_tokens_no_merge(self):
+        input_tokens = ["a", "a", "a", "b", "d", "a", "a", "a", "b", "a", "c"]
+        char_pair = ("a", "b")
+        when_merged = "ab" # the character pair "a" and "b" do not exist in the input tokens
+        merged_tokens = self.tokenizer.merge_character_pairs_to_tokens(input_tokens, char_pair, when_merged)
+        print(f"output from merge_character_pairs_to_tokens = {merged_tokens}")
+        self.assertEqual(["a", "a", "ab", "d", "a", "a", "ab", "a", "c"], merged_tokens)
+        
+    #
+    def _most_frequent_word(self, word_counts: dict[str, int]) -> str:
+        if not word_counts:
+            return ""
+        return max(word_counts, key=word_counts.get)
+
+if __name__ == "__main__":
+    unittest.main()
