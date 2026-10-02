@@ -1,6 +1,7 @@
 import unittest
 import re
-
+from bpe import TokenList
+from bpe import Token
 from bpe import BPETokenizer
 
 class TestBPETokenizer(unittest.TestCase):
@@ -75,22 +76,32 @@ class TestBPETokenizer(unittest.TestCase):
         self.assertEqual(["zy", "d", "zy", "a", "c"], merged_tokens)
         
     def test_train_bpe(self):
-        word_freqs = {"hug": 5, "hugs": 2, "bug": 3, "bugs": 4}
-        tokens = self.tokenizer.train_bpe("hug hugs bug bugs")
+        tokens = TokenList()
+        tokens.entries.append(Token("hug"))
+        tokens.entries.append(Token("hugs"))
+        tokens.entries.append(Token("bug"))
+        tokens.entries.append(Token("bugs"))
+        tokens = self.tokenizer.train_bpe(tokens)
         print(f"output from train_bpe = {tokens}")
         #self.assertIsInstance(tokens, list)
         
     def test_train_bpe_from_shakespeare(self):
         text = "Shall I compare thee to a summer's day?"
         word_freqs = self.tokenizer.word_frequencies(text)
-        tokens = self.tokenizer.train_bpe(word_freqs)
+        token_list = TokenList()
+        for word in word_freqs:
+            token_list.entries.append(Token(word))
+        tokens = self.tokenizer.train_bpe(token_list)
         print(f"output from train_bpe_from_shakespeare = {tokens}")
         self.assertIsInstance(tokens, list)
         
     def test_train_bpe_from_shakespeare_again(self):
         text = "summer's more more"
         word_freqs = self.tokenizer.word_frequencies(text)
-        tokens = self.tokenizer.train_bpe(word_freqs)
+        token_list = TokenList()
+        for word in word_freqs:
+            token_list.entries.append(Token(word))
+        tokens = self.tokenizer.train_bpe(token_list)
         #print(f"output from train_bpe_from_shakespeare = {tokens}")
         self.assertIsInstance(tokens, list)
         
