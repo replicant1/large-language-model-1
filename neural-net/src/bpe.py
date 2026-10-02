@@ -32,6 +32,9 @@ class Vocabulary:
         else:
             self.entries.remove(old_entry)
             self.entries.append(Token(entry.token, entry.frequency + old_entry.frequency))
+            
+    def find_entry_by_token(self, token: str) -> Token | None:
+        return self._find_entry_by_str(token)
         
     def _find_entry_by_str(self, token: str) -> Token | None:
         for entry in self.entries:
@@ -93,8 +96,6 @@ class BPETokenizer:
                 #print(f"pair: {(vocab_sub_term[i], vocab_sub_term[i + 1])}, frequency incremented to {pairs[(vocab_sub_term[i], vocab_sub_term[i + 1])]}")
         return pairs
     
-  
-    
     # Merges the most frequent pair in all words in the vocabulary
     def merge_vocab(self, vocab_in: dict[str, int], pair: tuple[str, str]) -> dict[str, int]:
         vocab_out = {}
@@ -128,11 +129,24 @@ class BPETokenizer:
         print(f"vocabulary at start has size: {vocab.size()}:")
         vocab.print()
         
-        pair_frequencies = self.count_adjacent_letter_pair_frequencies(text)
-        print(f"pair frequencies: {pair_frequencies}")
+        for step in range(3):
+            print(f"--- STEP {step} ---")
+            pair_frequencies = self.count_adjacent_letter_pair_frequencies(text)
+            if not pair_frequencies:
+                break
+            print(f"pair frequencies before removing: {pair_frequencies}")
+            pairs_not_counted = {pair: freq for pair, freq in pair_frequencies.items() if not vocab.find_entry_by_token(''.join(pair))}
+            print(f"pair frequencies after removing: {pairs_not_counted}")
             
-        best = max(pair_frequencies, key=pair_frequencies.get)
-        print(f"most frequent pair: {best} -> {pair_frequencies[best]}")
+            best = max(pairs_not_counted, key=pairs_not_counted.get)
+            print(f"most frequent pair: {best} -> {pairs_not_counted[best]}")
+        
+            vocab.merge(Token(''.join(best), 0))
+            print(f"vocabulary after merging most frequent pair:")
+            vocab.print()
+            
+        print("--- END STATE VOCABULARY ---")
+        vocab.print()
         
         # vocab = self.merge_vocab(vocab, best)
         # #merges.append(best)
