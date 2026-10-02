@@ -78,8 +78,10 @@ def main():
 	# 	output_neuron.value += synapse_in.weight * synapse_in.from_neuron.value
 	# 	print(f"Updated value to {output_neuron.value} because synapse weight is {synapse_in.weight} from neuron {synapse_in.from_neuron.id} with value {synapse_in.from_neuron.value}")
  
-	builder = NeuralNetBuilder([3, 2, 1])
-	builder.build()
+	# builder = NeuralNetBuilder([3, 2, 1])
+	# builder.build()
+ 
+ 
  
 
 if __name__ == "__main__":
