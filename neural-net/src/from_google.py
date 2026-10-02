@@ -28,7 +28,7 @@ def merge_vocab(pair, v_in):
 
 
 # Initial vocabulary with word frequencies and space-separated characters
-vocab = {'h u g </w>': 5, 'p u g </w>': 2, 'p u n </w>': 3}
+vocab = {'s u m m e r s </w>': 5, 'm o </w>': 2, 'p u n </w>': 3}
 
 num_merges = 3
 merges = []

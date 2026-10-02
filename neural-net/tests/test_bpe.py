@@ -1,4 +1,5 @@
 import unittest
+import re
 
 from bpe import BPETokenizer
 
@@ -74,9 +75,23 @@ class TestBPETokenizer(unittest.TestCase):
         self.assertEqual(["zy", "d", "zy", "a", "c"], merged_tokens)
         
     def test_train_bpe(self):
-        word_freqs = {"hug": 5, "pug": 2, "pun": 3}
-        tokens = self.tokenizer.train_bpe(word_freqs)
+        word_freqs = {"hug": 5, "hugs": 2, "bug": 3, "bugs": 4}
+        tokens = self.tokenizer.train_bpe("hug hugs bug bugs")
         print(f"output from train_bpe = {tokens}")
+        #self.assertIsInstance(tokens, list)
+        
+    def test_train_bpe_from_shakespeare(self):
+        text = "Shall I compare thee to a summer's day?"
+        word_freqs = self.tokenizer.word_frequencies(text)
+        tokens = self.tokenizer.train_bpe(word_freqs)
+        print(f"output from train_bpe_from_shakespeare = {tokens}")
+        self.assertIsInstance(tokens, list)
+        
+    def test_train_bpe_from_shakespeare_again(self):
+        text = "summer's more more"
+        word_freqs = self.tokenizer.word_frequencies(text)
+        tokens = self.tokenizer.train_bpe(word_freqs)
+        #print(f"output from train_bpe_from_shakespeare = {tokens}")
         self.assertIsInstance(tokens, list)
         
     def _most_frequent_word(self, word_counts: dict[str, int]) -> str:
