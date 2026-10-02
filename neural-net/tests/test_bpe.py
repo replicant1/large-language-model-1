@@ -77,10 +77,9 @@ class TestBPETokenizer(unittest.TestCase):
         
     def test_train_bpe(self):
         tokens = TokenList()
-        tokens.entries.append(Token("hug"))
-        tokens.entries.append(Token("hugs"))
-        tokens.entries.append(Token("bug"))
-        tokens.entries.append(Token("bugs"))
+        text = "hug hugs bug bugs"
+        for char in text:
+            tokens.add(Token(char))
         tokens = self.tokenizer.train_bpe(tokens)
         print(f"output from train_bpe = {tokens}")
         #self.assertIsInstance(tokens, list)
