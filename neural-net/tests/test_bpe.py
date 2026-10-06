@@ -3,6 +3,7 @@ import re
 from bpe import TokenList
 from bpe import Token
 from bpe import BPETokenizer
+from bpe import MergeRule
 
 class TestBPETokenizer(unittest.TestCase):
     def setUp(self):
@@ -39,7 +40,8 @@ class TestBPETokenizer(unittest.TestCase):
         input_tokens.add(Token("t"))
         input_tokens.add(Token("s"))
         char_pair = (Token("c"), Token("a"))
-        merged_token_list = self.tokenizer.merge_token_pair_in_token_list(input_tokens, char_pair)
+        merge_rule = MergeRule(char_pair, Token("ca"))
+        merged_token_list = self.tokenizer.apply_merge_rule_to_token_list(input_tokens, merge_rule)
         print(f"output from merge_token_pair_in_token_list = {merged_token_list}")
         self.assertEqual("ca", merged_token_list.entries[0].token)
         
@@ -48,7 +50,8 @@ class TestBPETokenizer(unittest.TestCase):
         for char in ["a", "a", "a", "b", "d", "a", "a", "a", "b", "a", "c"]:
             input_tokens.add(Token(char))
         char_pair = (Token("a"), Token("b"))
-        merged_token_list = self.tokenizer.merge_token_pair_in_token_list(input_tokens, char_pair)
+        merge_rule = MergeRule(char_pair, Token("ab"))
+        merged_token_list = self.tokenizer.apply_merge_rule_to_token_list(input_tokens, merge_rule)
         print(f"output from merge_token_pair_in_token_list = {merged_token_list}")
         self.assertEqual(["a", "a", "ab", "d", "a", "a", "ab", "a", "c"], [token.token for token in merged_token_list.entries])
         
@@ -57,7 +60,8 @@ class TestBPETokenizer(unittest.TestCase):
         for char in ["z", "a", "b", "d", "z", "a", "b", "a", "c"]:
             input_tokens.add(Token(char))
         char_pair = (Token("a"), Token("b"))
-        merged_token_list = self.tokenizer.merge_token_pair_in_token_list(input_tokens, char_pair)
+        merge_rule = MergeRule(char_pair, Token("ab"))
+        merged_token_list = self.tokenizer.apply_merge_rule_to_token_list(input_tokens, merge_rule)
         print(f"output from merge_token_pair_in_token_list = {merged_token_list}")
         self.assertEqual(["z", "ab", "d", "z", "ab", "a", "c"], [token.token for token in merged_token_list.entries])
         
@@ -66,7 +70,8 @@ class TestBPETokenizer(unittest.TestCase):
         for char in ["x", "y", "x", "y", "z"]:
             input_tokens.add(Token(char))
         char_pair = (Token("x"), Token("y"))
-        merged_token_list = self.tokenizer.merge_token_pair_in_token_list(input_tokens, char_pair)
+        merge_rule = MergeRule(char_pair, Token("xy"))
+        merged_token_list = self.tokenizer.apply_merge_rule_to_token_list(input_tokens, merge_rule)
         print(f"output from merge_token_pair_in_token_list = {merged_token_list}")
         self.assertEqual(["xy", "xy", "z"], [token.token for token in merged_token_list.entries])
         
@@ -75,21 +80,26 @@ class TestBPETokenizer(unittest.TestCase):
         for char in ["z", "y", "d", "z", "y", "a", "c"]:
             input_tokens.add(Token(char))
         char_pair = (Token("z"), Token("y"))
-        merged_token_list = self.tokenizer.merge_token_pair_in_token_list(input_tokens, char_pair)
+        merge_rule = MergeRule(char_pair, Token("zy"))
+        merged_token_list = self.tokenizer.apply_merge_rule_to_token_list(input_tokens, merge_rule)
         print(f"output from merge_token_pair_in_token_list = {merged_token_list}")
         self.assertEqual(["zy", "d", "zy", "a", "c"], [token.token for token in merged_token_list.entries])
         
     def test_train_bpe(self):
-        text = "hug hugs bug bugs"
+        text = "fred fed ted bread, ted fed fred bread"
+        pair_frequencies = self.tokenizer.word_frequencies(text)
+        result = self.tokenizer.train_bpe(pair_frequencies)
+        print(f"output from train_bpe = {result}")
+        expected_token_strings = ["a", "t", "r", "e", "f", ",", "ed", "d", "b"]
+        for token_string in expected_token_strings:
+            self.assertTrue(Token(token_string) in result.entries)
+        self.assertEqual(9, len(result.entries))
+        
+    def test_train_bpe_2(self):
+        text = "Walked Talked Byzked"
         pair_frequencies = self.tokenizer.word_frequencies(text)
         tokens = self.tokenizer.train_bpe(pair_frequencies)
-        print(f"output from train_bpe = {tokens}")
-        
-    # def test_train_bpe_2(self):
-    #     text = "Walked Talked Byzked"
-    #     pair_frequencies = self.tokenizer.word_frequencies(text)
-    #     tokens = self.tokenizer.train_bpe(pair_frequencies)
-    #     print(f"output from train_bpe_2 = {tokens}")
+        print(f"output from train_bpe_2 = {tokens}")
         
     # def test_train_bpe_from_shakespeare(self):
     #     text = "Shall I compare thee to a summer's day?"
