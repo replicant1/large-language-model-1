@@ -18,11 +18,6 @@ class Token:
     def concat(self, other: Token) -> str:
         return self.token + other.token
     
-# @dataclass(frozen=True)
-# class VocabEntry:
-#     token: str
-#     frequency: int
-    
 class TokenList:
     def __init__(self):
         self.entries = []
@@ -50,12 +45,38 @@ class TokenList:
                 return entry
         return None
     
+    def __str__(self) -> str:
+        return ", ".join(entry.token for entry in self.entries)
+    
+    def __repr__(self) -> str:
+        return f"[{self.__str__()}]"
+    
     def size(self) -> int:
         return len(self.entries)
     
     def print(self):
         for index, entry in enumerate(self.entries):
             print(f"Token[{index}]: {entry.token}")
+            
+class TokenSet:
+    def __init__(self):
+        self.entries = set()
+        
+    def entries(self) -> set[Token]:
+        return self.entries
+
+    def add(self, entry: Token):
+        self.entries.add(entry)
+
+    def contains(self, token : str) -> bool:
+        return any(entry.token == token for entry in self.entries)
+
+    def size(self) -> int:
+        return len(self.entries)
+    
+    def print(self):
+        for entry in self.entries:
+            print(f"Token: {entry.token}")
     
 class BPETokenizer:
     def __init__(self):
@@ -66,52 +87,49 @@ class BPETokenizer:
     # returns a dictionary with words as keys and their counts as values
     def word_frequencies(self, text: str) -> dict[str, int]:
         word_counts = dict()
-        words = re.findall(r"\w+|\s|[^\w\s]", text)
+        words = re.findall(r"\w+|[^\w\s]", text)
         print(f"num words = {len(words)}")
         for word in words:
             current_count = word_counts.get(word, 0)
             word_counts[word] = current_count + 1
         return word_counts
     
-    # This is where the name "byte pair encoding" comes from: it merges the most frequent pairs of bytes (or characters) 
-    # in a sequence.
-    # input_tokens: list of tokens to process
-    # char_pair: tuple of two characters to merge
-    # when_merged: string to replace the merged character pair with
-    # returns a new list of tokens with the specified character pair merged
-    def merge_pairs_to_tokens(self, input_tokens: list[str], pair: tuple[str, str], when_merged: str) -> list[str]:
-        merged_tokens = []
-        i = 0
-        while i < len(input_tokens):
-            if i < len(input_tokens) - 1 and (input_tokens[i], input_tokens[i + 1]) == pair:
-                merged_tokens.append(when_merged)
-                i += 2
-            else:
-                merged_tokens.append(input_tokens[i])
-                i += 1
-        return merged_tokens
-    
-    def count_adjacent_token_pair_frequencies(self, tokens : TokenList) -> dict[tuple[Token, Token], int]:
+    def count_adjacent_token_pair_frequencies(self, word_to_token_list: dict[str, TokenList]) -> dict[tuple[Token, Token], int]:
         pairs = defaultdict(int)
-        print(f"Counting adjacent token pair frequencies for #tokens: {len(tokens.entries)}, tokens: {tokens}")
-        for index in range(len(tokens.entries) - 1):
-            this_token : Token = tokens.entries[index]
-            next_token : Token = tokens.entries[index + 1]
-            print(f"this_token =  {this_token}, Next token =  {next_token}")
-            this_pair = (this_token, next_token)    
-            pairs[this_pair] += 1
+        for word, tokens in word_to_token_list.items():
+            print(f"Counting adjacent token pair frequencies for word: {word}, tokens: {tokens}")
+            for index in range(len(tokens.entries) - 1):
+                this_token : Token = tokens.entries[index]
+                next_token : Token = tokens.entries[index + 1]
+                this_pair = (this_token, next_token)    
+                pairs[this_pair] += 1
         return pairs
     
+    def merge_token_pair_in_token_list(self, input_tokens: TokenList, token_pair: tuple[Token, Token]) -> TokenList:
+        result = TokenList()
+        i = 0
+        while i < len(input_tokens.entries):
+            if i < len(input_tokens.entries) - 1 and (input_tokens.entries[i], input_tokens.entries[i + 1]) == token_pair:
+                merged_token = Token(''.join([token.token for token in token_pair]))
+                result.entries.append(merged_token)
+                i += 2
+            else:
+                result.entries.append(input_tokens.entries[i])
+                i += 1
+        return result   
+    
     # Merges the most frequent pair in all words in the vocabulary
-    def merge_vocab(self, vocab_in: dict[str, int], pair: tuple[str, str]) -> dict[str, int]:
-        vocab_out = {}
-        bigram = ' '.join(pair)
-        replacement = ''.join(pair)
-        for word, freq in vocab_in.items():
-            # Replace the bigram with the merged replacement in the word
+    def merge_vocab(self, word_to_token_list: dict[str, TokenList], token_pair: tuple[Token, Token]):
+        bigram = ' '.join([token.token for token in token_pair])
+        print(f"Bigram to merge: {bigram}")
+        replacement = ''.join([token.token for token in token_pair])
+        print(f"Replacement for bigram: {replacement}")
+        print(f"Merging pair: {token_pair} -> {replacement}")
+        # Perform the merge in the input word_to_token_list dictionary AND in the vocabulary output dictionary
+        for word, token_list in word_to_token_list.items():
             new_word = word.replace(bigram, replacement)
-            vocab_out[new_word] = freq
-        return vocab_out
+            word_to_token_list[word] = self.merge_token_pair_in_token_list(token_list, token_pair)
+            print(f"Merged token list for {new_word}: {word_to_token_list[word]}")
     
     def count_adjacent_letter_pair_frequencies(self, text: str) -> dict[str, int]:
         pairs = defaultdict(int)
@@ -124,49 +142,41 @@ class BPETokenizer:
     # word_freqs: dictionary with words as keys and their counts as values
     # max_merges: maximum number of merges to perform
     # returns a list of tokens after applying BPE merges
-    def train_bpe(self, tokens: TokenList, max_merges: int = 1000) -> list[str]:
-        print(f"tokens at input:")
-        tokens.print()
+    def train_bpe(self, word_freqs: dict[str, int], max_merges: int = 1000) -> list[str]:
+        print(f"word_freqs at input: {word_freqs}")
         
-        for step in range(1):
+        # Convert each word into a list of Token objects and store them in tokens_per_word dictionary
+        word_to_token_list = dict[str, TokenList]()
+        for word in word_freqs:
+            print(f"processing word: {word}")
+            word_to_token_list[word] = TokenList()
+            for char in word:
+                word_to_token_list[word].add(Token(char)) 
+                
+        print(f"tokens_per_word after initial tokenization: {word_to_token_list}")
+        
+        for step in range(2):
             print(f"--- STEP {step} ---")
-            pair_frequencies = self.count_adjacent_token_pair_frequencies(tokens)
-            print(f"pair frequencies: {pair_frequencies}")
-            if not pair_frequencies:
+            token_pair_frequencies = self.count_adjacent_token_pair_frequencies(word_to_token_list)
+            print(f"pair frequencies: {token_pair_frequencies}")
+            if not token_pair_frequencies:
                 break
-            # print(f"pair frequencies before removing: {pair_frequencies}")
-            # pairs_not_counted = {pair: freq for pair, freq in pair_frequencies.items() if not tokens.find_entry_by_token(''.join(pair))}
-            # print(f"pair frequencies after removing: {pairs_not_counted}")
             
-            # best = max(pairs_not_counted, key=pairs_not_counted.get)
-            # print(f"most frequent pair: {best} -> {pairs_not_counted[best]}")
+            # print(f"pair frequencies before removing already counted pairs: {pair_frequencies}")
+            # pairs_not_counted = {pair: freq for pair, freq in pair_frequencies.items() 
+            #                      if not tokens.find_entry_by_token(''.join(pair))}
+            # print(f"pair frequencies after removing already counted pairs: {pairs_not_counted}")
+            
+            most_freq_token_pair = max(token_pair_frequencies, key=token_pair_frequencies.get)
+            print(f"most frequent pair: {most_freq_token_pair} -> {token_pair_frequencies[most_freq_token_pair]}")
         
-            # tokens.merge(Token(''.join(best), 0))
-            # print(f"vocabulary after merging most frequent pair:")
-            # tokens.print()
+            # Perform the token merge for the most frequent pair
+            self.merge_vocab(word_to_token_list, most_freq_token_pair)
+            
+            merged = word_to_token_list
+            print(f"merged =  {merged}")
+            
             
         print("--- END STATE VOCABULARY ---")
-        tokens.print()
-        
-        # vocab = self.merge_vocab(vocab, best)
-        # #merges.append(best)
-        # print("vocab after first merge ")
-        # vocab.print_entries()
-        
-        # for i in range(max_merges):
-        #     print(f"i == {i}")
-        #     pairs = self.count_adjacent_pair_frequencies(vocab)  
-        #     if not pairs:
-        #         break
-            
-        #     # find the most frequently occurrring pair
-        #     best = max(pairs, key = pairs.get)
-        #     print(f"MOST FREQUENTLY OCCURRING PAIR: {best}, frequency: {pairs[best]}")
-        #     vocab = self.merge_vocab(vocab, best)
-        #     merges.append(best)
-        #     print(f"vocab after merge ({len(vocab)} tokens): {vocab}")
-        #     print(f'Merge {i+1}: {best} -> Result: {list(vocab.keys())}')
-                
-        # print(f'\nLearned Merges ({len(merges)}): {merges}')
-        #return list(vocab.keys())
+      
         
