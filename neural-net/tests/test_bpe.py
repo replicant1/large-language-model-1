@@ -85,6 +85,12 @@ class TestBPETokenizer(unittest.TestCase):
         tokens = self.tokenizer.train_bpe(pair_frequencies)
         print(f"output from train_bpe = {tokens}")
         
+    # def test_train_bpe_2(self):
+    #     text = "Walked Talked Byzked"
+    #     pair_frequencies = self.tokenizer.word_frequencies(text)
+    #     tokens = self.tokenizer.train_bpe(pair_frequencies)
+    #     print(f"output from train_bpe_2 = {tokens}")
+        
     # def test_train_bpe_from_shakespeare(self):
     #     text = "Shall I compare thee to a summer's day?"
     #     pair_frequences = self.tokenizer.word_frequencies(text)
