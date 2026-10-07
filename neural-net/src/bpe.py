@@ -93,14 +93,15 @@ class BPETokenizer:
             word_counts[word] = current_count + 1
         return word_counts
     
-    def count_adjacent_token_pair_frequencies(self, word_to_token_list: dict[str, TokenList]) -> dict[tuple[Token, Token], int]:
+    # Count how often each adjacent token pair occurs, weighting each word's pairs by how often the word occurs
+    def count_adjacent_token_pair_frequencies(self, word_to_token_list: dict[str, TokenList], word_freqs: dict[str, int]) -> dict[tuple[Token, Token], int]:
         pairs = defaultdict(int)
         for word, tokens in word_to_token_list.items():
             for index in range(len(tokens.entries) - 1):
                 this_token : Token = tokens.entries[index]
                 next_token : Token = tokens.entries[index + 1]
                 this_pair = (this_token, next_token)    
-                pairs[this_pair] += 1
+                pairs[this_pair] += word_freqs[word]
                 
         print("--- ADJACENT TOKEN PAIR COUNTS ---")
         for pair, count in pairs.items():
@@ -129,12 +130,16 @@ class BPETokenizer:
             print(f"Applying merge rule to TokenList for word: {word}")
             word_to_token_list[word] = self.apply_merge_rule_to_token_list(token_list, merge_rule)
         return word_to_token_list
+    
+    def tokenize(self, corpus: str, max_merges: int = 1000) -> TokenSet:
+        pair_frequencies = self.word_frequencies(corpus)
+        return self.train_bpe(pair_frequencies, max_merges)
         
     # Train the BPE tokenizer by repeatedly merging the most frequent pairs of characters in the input text.
     # Keep merging the most frequent pairs until reaching the maximum number of merges or no more merges are possible.
     # word_freqs: dictionary with words as keys and their counts as values
     # max_merges: maximum number of merges to perform
-    # returns a list of tokens after applying BPE merges
+    # returns a set of tokens (vocabulary) after applying BPE merges
     def train_bpe(self, word_freqs: dict[str, int], max_merges: int = 1000) -> TokenSet:
         print(f"Into train_bpe with word_freqs at input: {word_freqs}")
         
@@ -155,7 +160,7 @@ class BPETokenizer:
         for step in range(max_merges):
             print(f"--- STEP {step} ---")
             
-            token_pair_frequencies = self.count_adjacent_token_pair_frequencies(word_to_token_list)
+            token_pair_frequencies = self.count_adjacent_token_pair_frequencies(word_to_token_list, word_freqs)
             if not token_pair_frequencies:
                 break
             
