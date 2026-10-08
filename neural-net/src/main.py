@@ -75,7 +75,7 @@ def main():
 	# print(f"Tracing output neuron {output_neuron.id}")
 	# for synapse_in in output_neuron.synapses_in:
 	# 	print(f"Processing synapse {synapse_in.id}")
-	# 	output_neuron.value += synapse_in.weight * synapse_in.from_neuron.value
+	# 	output_neuron.value += synapse_in.weight * synapse_in.from_neuron.value # sigmoid will squash int the range 0 to 1
 	# 	print(f"Updated value to {output_neuron.value} because synapse weight is {synapse_in.weight} from neuron {synapse_in.from_neuron.id} with value {synapse_in.from_neuron.value}")
  
 	# builder = NeuralNetBuilder([3, 2, 1])
