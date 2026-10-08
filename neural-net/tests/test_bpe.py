@@ -4,6 +4,7 @@ from bpe import TokenList
 from bpe import Token
 from bpe import BPETokenizer
 from bpe import MergeRule
+from bpe import TokenFreq
 
 class TestBPETokenizer(unittest.TestCase):
     def setUp(self):
@@ -85,24 +86,27 @@ class TestBPETokenizer(unittest.TestCase):
         print(f"output from merge_token_pair_in_token_list = {merged_token_list}")
         self.assertEqual(["zy", "d", "zy", "a", "c"], [token.token for token in merged_token_list.entries])
         
-    def test_tokenize(self):
+    def test_tokenize_1(self):
         text = "fred fed ted bread, ted fed fred bread"
         result = self.tokenizer.train_bpe(text)
         print(f"output from train_bpe = {result}")
-        expected_token_strings = [",", "a", "b", "br", "bre", "brea", "bread", "d", "e", "ed",
-                                  "f", "fed", "fr", "fred", "r", "t", "ted"]
-        for token_string in expected_token_strings:
-            self.assertTrue(Token(token_string) in result.entries)
-        self.assertEqual(len(expected_token_strings), len(result.entries))
+        expected_token_freqs = self._token_freqs({
+            "d": 8, "e": 8, "ed": 6, "f": 4, "r": 4,
+            "a": 2, "b": 2, "br": 2, "bre": 2, "brea": 2, "bread": 2,
+            "fed": 2, "fr": 2, "fred": 2, "t": 2, "ted": 2, ",": 1,
+        })
+        self.assertEqual(expected_token_freqs, result.entries)
         
     def test_tokenize_2(self):
         text = "Walked Talked Byzked"
         result = self.tokenizer.train_bpe(text)
-        expected_token_strings = ["W", "a", "l", "k", "e", "d", "T", "B", "y", "z", "ke", "ked", "al", "alked"]
+        expected_token_freqs = self._token_freqs({
+            "d": 3, "e": 3, "k": 3, "ke": 3, "ked": 3,
+            "a": 2, "al": 2, "alked": 2, "l": 2,
+            "B": 1, "T": 1, "W": 1, "y": 1, "z": 1,
+        })
         print(f"output from train_bpe_2 = {result}")
-        for token_string in expected_token_strings:
-            self.assertTrue(Token(token_string) in result.entries)
-        self.assertEqual(len(expected_token_strings), len(result.entries))
+        self.assertEqual(expected_token_freqs, result.entries)
 
     # --- Pair counts must be weighted by word frequency ---
 
@@ -110,8 +114,8 @@ class TestBPETokenizer(unittest.TestCase):
         # "aa" occurs twice, so the pair (a, a) occurs twice and should be merged
         result = self.tokenizer.train_bpe("aa aa")
         print(f"output from tokenize = {result}")
-        self.assertIn(Token("aa"), result.entries)
-        self.assertEqual({"a", "aa"}, {token.token for token in result.entries})
+        self.assertIn(TokenFreq(Token("aa"), 2), result.entries)
+        self.assertEqual(self._token_freqs({"a": 4, "aa": 2}), result.entries)
 
     def test_count_pairs_weighted_by_word_frequency(self):
         hugTokenList = TokenList()
@@ -182,6 +186,9 @@ class TestBPETokenizer(unittest.TestCase):
         for token_string in token_strings:
             token_list.add(Token(token_string))
         return token_list
+
+    def _token_freqs(self, token_string_to_freq: dict[str, int]) -> set[TokenFreq]:
+        return {TokenFreq(Token(token_string), freq) for token_string, freq in token_string_to_freq.items()}
 
     def _strings(self, token_list: TokenList) -> list[str]:
         return [token.token for token in token_list.entries]

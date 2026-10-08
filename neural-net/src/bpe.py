@@ -11,9 +11,13 @@ class MergeRule:
 @dataclass(frozen=True)
 class Token:
     token: str
-    #frequency: int
     def concat(self, other: Token) -> str:
         return self.token + other.token
+    
+@dataclass(frozen=True)
+class TokenFreq:
+    token: Token
+    frequency: int
     
 class TokenList:
     def __init__(self):
@@ -24,23 +28,6 @@ class TokenList:
     
     def add(self, entry: Token):
         self.entries.append(entry)
-
-    def merge(self, entry: Token):
-        old_entry = self._find_entry_by_str(entry.token)
-        if old_entry is None:
-            self.entries.append(entry)
-        else:
-            self.entries.remove(old_entry)
-            self.entries.append(Token(entry.token))
-            
-    def find_entry_by_token(self, token: str) -> Token | None:
-        return self._find_entry_by_str(token)
-        
-    def _find_entry_by_str(self, token: str) -> Token | None:
-        for entry in self.entries:
-            if entry.token == token:
-                return entry
-        return None
     
     def __str__(self) -> str:
         return ", ".join(entry.token for entry in self.entries)
@@ -54,33 +41,46 @@ class TokenList:
     def print(self):
         for index, entry in enumerate(self.entries):
             print(f"Token[{index}]: {entry.token}")
-            
-class TokenSet:
+      
+# List of frequencies with which each token occurs in a corpus, sorted from most 
+# frequent to least frequent. Each token appears only once.      
+class TokenFreqSet:
     def __init__(self):
         self.entries = set()
         
-    def entries(self) -> set[Token]:
+    def entries(self) -> set[TokenFreq]:
         return self.entries
 
-    def add(self, entry: Token):
-        self.entries.add(entry)
+    # Add a new token frequency to the set, combining it with any existing frequency for the same token.
+    def add(self, new_token_freq: TokenFreq):
+        old_freq = 0
+        if (self.contains(new_token_freq.token.token)):
+            old_freq = next(entry.frequency for entry in self.entries if entry.token == new_token_freq.token)
+            self.entries.remove(next(entry for entry in self.entries if entry.token == new_token_freq.token))
+        self.entries.add(TokenFreq(new_token_freq.token, old_freq + new_token_freq.frequency))
 
     def contains(self, token : str) -> bool:
-        return any(entry.token == token for entry in self.entries)
+        return any(entry.token.token == token for entry in self.entries)
 
     def size(self) -> int:
         return len(self.entries)
     
     def print(self):
         for entry in self.entries:
-            print(f"Token: {entry.token}")
+            print(f"Token: {entry.token} Frequency: {entry.frequency}")
             
     def __str__(self) -> str:
-        return ", ".join(entry.token for entry in self.entries)
-    
+        return self.__repr__()
+
+    # Returns the entries as a list, most frequent first, with ties in token order,
+    # so the order is the same every run
+    def sorted_by_frequency(self) -> list[TokenFreq]:
+        return sorted(self.entries, key=lambda entry: (-entry.frequency, entry.token.token))
+
+    def __repr__(self) -> str:
+        return "[" + ", ".join(f"{entry.token.token}: {entry.frequency}" for entry in self.sorted_by_frequency()) + "]"
+
 class BPETokenizer:
-    def __init__(self):
-        pass
 
     # Prepare a table that maps each word to its count in the given text
     # text: string to count words from
@@ -132,7 +132,7 @@ class BPETokenizer:
         return word_to_token_list
     
     # You must have already called train_bpe before using this method to tokenize text.
-    def tokenize(self, text: str) -> TokenSet:
+    def tokenize(self, text: str) -> TokenFreqSet:
         # apply the merge rules from previous call to train_bpe
         return self.train_bpe(text)
         
@@ -141,14 +141,14 @@ class BPETokenizer:
     # word_freqs: dictionary with words as keys and their counts as values
     # max_merges: maximum number of merges to perform
     # returns a set of tokens (vocabulary) after applying BPE merges
-    def train_bpe(self, corpus: str, max_merges: int = 1000) -> TokenSet:
+    def train_bpe(self, corpus: str, max_merges: int = 1000) -> TokenFreqSet:
         print(f"Into train_bpe with corpus of length {len(corpus)}")
         
         word_freqs = self.word_frequencies(corpus)
         
         # Convert each word into a list of Token objects and store them in tokens_per_word dictionary
         # This approach means that the spaces betwen words are not represented as tokens
-        vocabulary = TokenSet()
+        vocabulary = TokenFreqSet()
         
         word_to_token_list = dict[str, TokenList]()
         for word in word_freqs:
@@ -156,9 +156,9 @@ class BPETokenizer:
             word_to_token_list[word] = TokenList()
             for char in word:
                 word_to_token_list[word].add(Token(char)) 
-                vocabulary.add(Token(char))
+                vocabulary.add(TokenFreq(Token(char), word_freqs[word]))
                 
-        print(f"INITIAL VOCABULARY: {vocabulary.entries}")
+        print(f"INITIAL VOCABULARY: {vocabulary}")
         
         for step in range(max_merges):
             print(f"--- STEP {step} ---")
@@ -172,19 +172,17 @@ class BPETokenizer:
             
             if token_pair_frequencies[most_freq_token_pair] < 2:
                             break
-            
-            token_pair_frequencies.pop(most_freq_token_pair)
         
             # Perform the token merge for the most frequently occuring token pair
             merge_rule = MergeRule(most_freq_token_pair, Token(''.join([token.token for token in most_freq_token_pair])))
             word_to_token_list = self.apply_merge_rule_to_token_map(word_to_token_list, merge_rule)
             
-            vocabulary.add(merge_rule.merged)
+            vocabulary.add(TokenFreq(merge_rule.merged, token_pair_frequencies[most_freq_token_pair]))
             
-            print(f"Merged vocabulary: {vocabulary.entries}")
+            print(f"Merged vocabulary: {vocabulary}")
             
         print("--- END STATE VOCABULARY ---")
-        print(f"Final vocabulary: {vocabulary.entries}")
+        print(f"Final vocabulary: {vocabulary}")
         return vocabulary
       
         
