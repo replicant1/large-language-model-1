@@ -87,7 +87,7 @@ class TestBPETokenizer(unittest.TestCase):
         
     def test_tokenize(self):
         text = "fred fed ted bread, ted fed fred bread"
-        result = self.tokenizer.train_bpe_from_corpus(text)
+        result = self.tokenizer.train_bpe(text)
         print(f"output from train_bpe = {result}")
         expected_token_strings = [",", "a", "b", "br", "bre", "brea", "bread", "d", "e", "ed",
                                   "f", "fed", "fr", "fred", "r", "t", "ted"]
@@ -97,7 +97,7 @@ class TestBPETokenizer(unittest.TestCase):
         
     def test_tokenize_2(self):
         text = "Walked Talked Byzked"
-        result = self.tokenizer.train_bpe_from_corpus(text)
+        result = self.tokenizer.train_bpe(text)
         expected_token_strings = ["W", "a", "l", "k", "e", "d", "T", "B", "y", "z", "ke", "ked", "al", "alked"]
         print(f"output from train_bpe_2 = {result}")
         for token_string in expected_token_strings:
@@ -108,7 +108,7 @@ class TestBPETokenizer(unittest.TestCase):
 
     def test_tokenize_repeated_word_is_merged(self):
         # "aa" occurs twice, so the pair (a, a) occurs twice and should be merged
-        result = self.tokenizer.train_bpe_from_corpus("aa aa")
+        result = self.tokenizer.train_bpe("aa aa")
         print(f"output from tokenize = {result}")
         self.assertIn(Token("aa"), result.entries)
         self.assertEqual({"a", "aa"}, {token.token for token in result.entries})

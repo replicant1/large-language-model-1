@@ -133,8 +133,8 @@ class BPETokenizer:
     
     # You must have already called train_bpe before using this method to tokenize text.
     def tokenize(self, text: str) -> TokenSet:
-        # apply the merges
-        return self.train_bpe_from_corpus(text)
+        # apply the merge rules from previous call to train_bpe
+        return self.train_bpe(text)
         
     # Train the BPE tokenizer by repeatedly merging the most frequent pairs of characters in the input text.
     # Keep merging the most frequent pairs until reaching the maximum number of merges or no more merges are possible.
@@ -142,7 +142,7 @@ class BPETokenizer:
     # max_merges: maximum number of merges to perform
     # returns a set of tokens (vocabulary) after applying BPE merges
     def train_bpe(self, corpus: str, max_merges: int = 1000) -> TokenSet:
-        print(f"Into train_bpe with word_freqs at input: {word_freqs}")
+        print(f"Into train_bpe with corpus of length {len(corpus)}")
         
         word_freqs = self.word_frequencies(corpus)
         
