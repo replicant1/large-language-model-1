@@ -538,7 +538,7 @@ class Embed:
     def train_skip_gram(self, opts: TrainingOptions) -> Iterator[InitResult | EpochResult | TrainEmbedResult]:
         words = opts.words
         epochs = opts.epochs
-        dim = opts.vector_size
+        embeded_vector_size = opts.vector_size
         window_size = opts.window_size
         negative_samples = opts.negative_samples
 
@@ -547,21 +547,20 @@ class Embed:
         rand = self.mulberry32(42)
 
         # Encode each sentence as vocabulary indices, then pair up nearby tokens
-        sentences = [self.vocabulary.encode(self.tokenize(sentence)) for sentence in CORPUS]
-        pairs = self.build_training_pairs(sentences, window_size)
-        print(f"Total training pairs: {len(pairs)}")
+        sentences_as_indices = [self.vocabulary.encode(self.tokenize(sentence)) for sentence in CORPUS]
+        positive_pairs = self.build_training_pairs(sentences_as_indices, window_size)
+        print(f"Total training pairs: {len(positive_pairs)}")
 
-        init_result = InitResult(
+        yield  InitResult(
             vocabSize=vocab_size,
             sentenceCount=len(CORPUS),
-            embeddingDim=dim,
+            embeddingDim=embeded_vector_size,
             windowSize=window_size,
-            totalPairs=len(pairs)
+            totalPairs=len(positive_pairs)
         )
-        yield init_result
 
-        cumulative = self.build_negative_sampling_table(self.vocabulary)
-        w_in, w_out = self.init_weights(vocab_size, dim, rand)
+        negative_sampling_table = self.build_negative_sampling_table(self.vocabulary)
+        w_in, w_out = self.init_weights(vocab_size, embeded_vector_size, rand)
 
         # How often (in epochs) to report progress: about 50 reports over the whole run,
         # but never less than every epoch. For example, 200 epochs -> every 4th epoch;
@@ -576,6 +575,6 @@ class Embed:
         # Note: epochs + 1 passes (0 to epochs inclusive), as in the TypeScript
         for epoch in range(epochs + 1):
             lr = self.learning_rate(epoch, epochs, lr_start, lr_end)
-            loss = self.train_epoch(pairs, w_in, w_out, dim, negative_samples, cumulative, rand, lr)
+            loss = self.train_epoch(positive_pairs, w_in, w_out, embeded_vector_size, negative_samples, negative_sampling_table, rand, lr)
             if epoch % step == 0 or epoch == epochs:
                 yield EpochResult(epoch=epoch, loss=self.round_6(loss))
