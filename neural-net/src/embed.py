@@ -1,8 +1,9 @@
-from typing import Callable
+from __future__ import annotations
+from typing import Callable, Iterator
 import math
 from dataclasses import dataclass
 
-from bpe import BPETokenizer, TokenFreqSet, TokenList
+from bpe import BPETokenizer, TokenFreqSet, TokenList, Vocabulary
 
 ## Curated training corpus for Word2Vec Skip-gram and transformer training.
 ##
@@ -195,14 +196,6 @@ STORIES = [
   "the princess had a kitten that sleeps on her bed and a puppy that sleeps on the floor. the kitten is tiny and cute and the puppy is small and playful. every day the princess walks with her pets in the garden. the kitten runs and the puppy runs after her. they are both popular pets in the kingdom. the queen loves her daughter and said she grows into a brave young woman. the king said our daughter is of royal blood and noble birth. she is a true animal lover. one day she will rule this land.",
 ];
 
-class Embed:
-    def __init__(self):
-        self.tokenizer = BPETokenizer()
-        self.token_freq_set: TokenFreqSet = self.tokenizer.train_bpe(" ".join(CORPUS).lower(), 500)
-    
-    def tokenize(self, text: str) -> TokenList:
-        return self.tokenizer.tokenize(text.lower())
-
 # /** Build a vocabulary from the corpus — returns word↔index mappings sorted by frequency (most common first). */
 # export function buildVocab(corpus: string[]) {
 #   const freq = new Map<string, number>();
@@ -223,37 +216,14 @@ class Embed:
 #   return { wordToIndex, indexToWord, freq };
 # }
 
-# Seendable random number generator
-def mulberry32(seed: int) -> Callable[[], float]:
-    MASK = 0xFFFFFFFF  # keep values to 32 bits, like JavaScript
-    state = int(seed) & MASK
-
-    def next_random() -> float:
-        nonlocal state
-        state = (state + 0x6D2B79F5) & MASK
-        t = ((state ^ (state >> 15)) * (1 | state)) & MASK
-        t = ((t + (((t ^ (t >> 7)) * (61 | t)) & MASK)) & MASK) ^ t
-        return ((t ^ (t >> 14)) & MASK) / 4294967296
-
-    return next_random
-
-# An "activation function" - decides how strongly a neuron fires.
-# squashes input into the range 0 to 1
-def sigmoid(x: float) -> float:
-    if x > 6:
-        return 1.0
-    if x < -6:
-        return 0.0
-    return 1 / (1 + math.exp(-x))
-
 # Options for training the skip-gram model.
 @dataclass(frozen=True)
 class TrainingOptions:
-    words: list[str]
-    epochs: int
-    dimensions: int
-    window_size: int
-    negative_samples: int
+    words: list[str] # The list of words in the corpus in the order they appear
+    epochs: int # Number of times to iterate over the entire corpus during training
+    vector_size: int # Length of the embedding vector for each word
+    window_size: int # How many words to consider to the left and right of the target word
+    negative_samples: int # Number of negative samples to draw for each positive (target, context) pair
 
 @dataclass(frozen=True)
 class InitResult:
@@ -303,14 +273,309 @@ class TrainEmbedResult:
     analogies: list[Analogy]
     warnings: list[str]
     
-def train_skip_gram(opts: TrainingOptions) -> tuple[InitResult, EpochResult, TrainEmbedResult]:
-    # Create pairs of words within the window size for skip-gram training
-    # Every word is paired with every other word within the window centered on itself.
-    pairs: list[tuple[int, int]] = []
-    tokenizer = BPETokenizer()
-    token_freq_set = tokenizer.train_bpe(" ".join(CORPUS).lower(), 500)
-    tokenized_sentences: list[TokenList] = []
-    for sentence in CORPUS:
-        tokens = tokenizer.tokenize(sentence.lower())
-        tokenized_sentences.append(tokens)
-    return (None, None, None)
+
+# Trains word embeddings on CORPUS: learns BPE tokens, builds a fixed vocabulary, then
+# trains a skip-gram model with negative sampling (see train_skip_gram).
+class Embed:
+    def __init__(self):
+        self.tokenizer = BPETokenizer()
+        self.token_freq_set: TokenFreqSet = self.tokenizer.train_bpe(" ".join(CORPUS).lower(), 500)
+        self.vocabulary = Vocabulary(self.token_freq_set)
+
+    def tokenize(self, text: str) -> TokenList:
+        return self.tokenizer.tokenize(text.lower())
+
+    # Seendable random number generator
+    def mulberry32(self, seed: int) -> Callable[[], float]:
+        MASK = 0xFFFFFFFF  # keep values to 32 bits, like JavaScript
+        state = int(seed) & MASK
+
+        def next_random() -> float:
+            nonlocal state
+            state = (state + 0x6D2B79F5) & MASK
+            t = ((state ^ (state >> 15)) * (1 | state)) & MASK
+            t = ((t + (((t ^ (t >> 7)) * (61 | t)) & MASK)) & MASK) ^ t
+            return ((t ^ (t >> 14)) & MASK) / 4294967296
+
+        return next_random
+
+    # An "activation function" - decides how strongly a neuron fires.
+    # squashes input into the range 0 to 1
+    def sigmoid(self, x: float) -> float:
+        if x > 6:
+            return 1.0
+        if x < -6:
+            return 0.0
+        return 1 / (1 + math.exp(-x))
+
+    # Builds the skip-gram training pairs: (target, context) vocabulary indices.
+    # Every token is paired with every other token within window_size positions of it in
+    # the same sentence. Pairs never cross from one sentence into the next.
+    #
+    # sentences: each sentence already encoded as vocabulary indices
+    #
+    # Example, with one sentence [9, 38, 249] ("the cat sat") and window_size = 1:
+    #
+    #   i=0 (9):    (9, 38)
+    #   i=1 (38):   (38, 9), (38, 249)
+    #   i=2 (249):  (249, 38)
+    def build_training_pairs(self, sentences: list[list[int]], window_size: int) -> list[tuple[int, int]]:
+        pairs: list[tuple[int, int]] = []
+        for indices in sentences:
+            for i in range(len(indices)):
+                for j in range(max(0, i - window_size), min(len(indices) - 1, i + window_size) + 1):
+                    if j != i:
+                        pairs.append((indices[i], indices[j]))
+        return pairs
+
+    # Builds the table used to pick negative samples, returned as a running total
+    # (cumulative) of each token's probability of being picked.
+    #
+    # Negative sampling a): for each real (target, context) pair, training also picks a few
+    # random tokens as "wrong" contexts, so the model learns which tokens do NOT go together.
+    # This builds the probability of each token being picked as one of those negatives.
+    #
+    # Each token's weight is its frequency raised to the power 0.75 (Mikolov's trick from
+    # word2vec), then all weights are divided by their total so they add up to 1.
+    # The 0.75 power flattens the differences: common tokens are still picked more often,
+    # but rare tokens get a bigger share than their raw count would give them.
+    #
+    # Example with three tokens:
+    #
+    #   token   frequency   raw share   frequency ** 0.75   unigram_power (final share)
+    #   the     100         90.1%       31.62               0.827  (82.7%)
+    #   cat     10           9.0%        5.62               0.147  (14.7%)
+    #   mat     1            0.9%        1.00               0.026   (2.6%)
+    #
+    # Negative sampling b): Running total of unigram_power, used to pick a negative token at random.
+    # Each token "owns" a stretch of the range 0 to 1 as wide as its probability, so drawing
+    # a random number r in that range and finding the first entry in cumulative that is >= r
+    # picks each token with exactly its probability.
+    #
+    # Example, continuing from above:
+    #
+    #   token           the     cat     mat
+    #   unigram_power   0.827   0.147   0.026
+    #   cumulative      0.827   0.974   1.000
+    #
+    #   r = 0.50  ->  first entry >= 0.50 is 0.827  ->  the
+    #   r = 0.90  ->  first entry >= 0.90 is 0.974  ->  cat
+    #   r = 0.99  ->  first entry >= 0.99 is 1.000  ->  mat
+    #
+    # (The TypeScript comment calls this an "alias table for O(1) sampling", but it is a
+    # cumulative table: finding the entry takes O(log n) with a binary search.)
+    def build_negative_sampling_table(self, vocabulary: Vocabulary) -> list[float]:
+        vocab_size = vocabulary.size()
+
+        unigram_power: list[float] = [0.0] * vocab_size
+        unigram_sum = 0.0
+        for i in range(vocab_size):
+            count = vocabulary.frequency_at(i)
+            unigram_power[i] = count ** 0.75
+            unigram_sum += unigram_power[i]
+        for i in range(vocab_size):
+            unigram_power[i] /= unigram_sum
+
+        cumulative: list[float] = [0.0] * vocab_size
+        cumulative[0] = unigram_power[0]
+        for i in range(1, vocab_size):
+            cumulative[i] = cumulative[i - 1] + unigram_power[i]
+        return cumulative
+
+    # Picks one token index at random to use as a negative, with each token's chance given
+    # by the negative sampling table. Draws r in the range 0 to 1, then binary-searches
+    # cumulative for the first entry >= r.
+    #
+    # Example, with cumulative = [0.827, 0.974, 1.000] and r = 0.90:
+    #
+    #   lo=0, hi=2, mid=1:  cumulative[1] = 0.974 >= 0.90  ->  hi = 1
+    #   lo=0, hi=1, mid=0:  cumulative[0] = 0.827 <  0.90  ->  lo = 1
+    #   lo == hi == 1       ->  returns 1 (cat)
+    #
+    # hi starts at the last index, so the result is always a valid index, even if
+    # rounding leaves the last cumulative entry slightly below 1.
+    def sample_negative(self, cumulative: list[float], rand: Callable[[], float]) -> int:
+        r = rand()
+        lo = 0
+        hi = len(cumulative) - 1
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if cumulative[mid] < r:
+                lo = mid + 1
+            else:
+                hi = mid
+        return lo
+
+    # Initialize the two weight matrices with small random values, each between
+    # -scale/2 and +scale/2, where scale = 0.5 / dim. Starting small and random keeps every
+    # token's vector different but close to zero, so no token starts out favoured.
+    #
+    # w_in holds each token's embedding as a target (the vectors we keep at the end);
+    # w_out holds each token's vector as a context. Both have one row of dim numbers
+    # per vocabulary index, stored flat in a single list, so row t, column d is at
+    # index t * dim + d.
+    #
+    # Example, with vocab_size = 3 and dim = 2:
+    #
+    #   w_in = [t0d0, t0d1,  t1d0, t1d1,  t2d0, t2d1]
+    #           \__row 0__/  \__row 1__/  \__row 2__/
+    #
+    # The rand() calls alternate between w_in and w_out, as in the TypeScript,
+    # so the same seed gives the same starting weights in both versions.
+    def init_weights(self, vocab_size: int, dim: int, rand: Callable[[], float]) -> tuple[list[float], list[float]]:
+        scale = 0.5 / dim
+        w_in: list[float] = [0.0] * (vocab_size * dim)
+        w_out: list[float] = [0.0] * (vocab_size * dim)
+        for i in range(len(w_in)):
+            w_in[i] = (rand() - 0.5) * scale
+            w_out[i] = (rand() - 0.5) * scale
+        return w_in, w_out
+
+    # Fisher-Yates shuffle: puts the pairs into a random order, in place.
+    # Working back from the last position, swap each item with a randomly chosen
+    # item at or before it. Every ordering is equally likely.
+    #
+    # Example, shuffling [A, B, C, D]:
+    #
+    #   i=3: j=1  ->  swap D and B  ->  [A, D, C, B]
+    #   i=2: j=2  ->  C stays put   ->  [A, D, C, B]
+    #   i=1: j=0  ->  swap D and A  ->  [D, A, C, B]
+    #
+    # Uses rand() rather than Python's random.shuffle, so the order depends only on the seed.
+    def shuffle(self, arr: list[tuple[int, int]], rand: Callable[[], float]) -> None:
+        for i in range(len(arr) - 1, 0, -1):
+            j = math.floor(rand() * (i + 1))
+            arr[i], arr[j] = arr[j], arr[i]
+
+    # Learning rate for a given epoch: falls in a straight line from lr_start at epoch 0
+    # to lr_end at the last epoch.
+    #
+    # Example, with lr_start = 0.025, lr_end = 0.001 and epochs = 4:
+    #
+    #   epoch   0       1       2       3       4
+    #   lr      0.025   0.019   0.013   0.007   0.001
+    def learning_rate(self, epoch: int, epochs: int, lr_start: float, lr_end: float) -> float:
+        if epochs == 0:
+            return lr_start
+        return lr_start - (lr_start - lr_end) * (epoch / epochs)
+
+    # Trains on one (target, other) pair and returns its loss.
+    #
+    # label is 1 for a positive pair (other really is near target in the text) and 0 for a
+    # negative sample (other is a random token). The model's score for the pair is
+    # sigmoid(dot product of target's w_in row and other's w_out row), a value from 0 to 1.
+    # Training moves the score towards the label:
+    #
+    #   positive (label 1):  grad = lr * (1 - score)  ->  the two vectors move closer together
+    #   negative (label 0):  grad = lr * (0 - score)  ->  the two vectors move apart
+    #
+    # Both rows are updated using each other's values from before the update, which is why
+    # the old w_in value is saved first.
+    #
+    # The loss measures how wrong the score was: -log(score) for a positive and
+    # -log(1 - score) for a negative. It is 0 for a perfect score and grows as the score
+    # gets worse. 1e-10 stops log(0) when a score is exactly 0 or 1.
+    #
+    # Example, positive pair, dim = 2, lr = 0.1:
+    #
+    #   target row (w_in) = [0.5, 0.5],  other row (w_out) = [0.5, -0.5]
+    #   dot = 0.25 - 0.25 = 0  ->  score = sigmoid(0) = 0.5  ->  grad = 0.1 * (1 - 0.5) = 0.05
+    #   target row becomes [0.5 + 0.05*0.5, 0.5 + 0.05*-0.5] = [0.525, 0.475]
+    #   other row becomes  [0.5 + 0.05*0.5, -0.5 + 0.05*0.5] = [0.525, -0.475]
+    #   loss = -log(0.5) = 0.693
+    def train_pair(self, w_in: list[float], w_out: list[float], dim: int,
+                   target: int, other: int, label: int, lr: float) -> float:
+        t_off = target * dim
+        o_off = other * dim
+
+        dot = 0.0
+        for d in range(dim):
+            dot += w_in[t_off + d] * w_out[o_off + d]
+        score = self.sigmoid(dot)
+        grad = lr * (label - score)
+        for d in range(dim):
+            w_in_d = w_in[t_off + d]
+            w_in[t_off + d] += grad * w_out[o_off + d]
+            w_out[o_off + d] += grad * w_in_d
+
+        if label == 1:
+            return -math.log(score + 1e-10)
+        return -math.log(1 - score + 1e-10)
+
+    # Runs one epoch: shuffles the pairs, then for each (target, context) pair trains on the
+    # positive pair and on negative_samples random negatives. Returns the average loss per pair.
+    #
+    # A negative that happens to be the real context is skipped, since it isn't really "wrong".
+    def train_epoch(self, pairs: list[tuple[int, int]], w_in: list[float], w_out: list[float], dim: int,
+                    negative_samples: int, cumulative: list[float], rand: Callable[[], float],
+                    lr: float) -> float:
+        if not pairs:
+            return 0.0
+
+        total_loss = 0.0
+        self.shuffle(pairs, rand)
+
+        for target, context in pairs:
+            # Positive sample: push target and context closer
+            total_loss += self.train_pair(w_in, w_out, dim, target, context, 1, lr)
+
+            # Negative samples: push target and random tokens apart
+            for _ in range(negative_samples):
+                neg = self.sample_negative(cumulative, rand)
+                if neg == context:
+                    continue
+                total_loss += self.train_pair(w_in, w_out, dim, target, neg, 0, lr)
+
+        return total_loss / len(pairs)
+
+    # Rounds to 6 decimal places, rounding halves up like JavaScript's Math.round.
+    # (Python's round() rounds halves to the nearest even digit instead.)
+    def round_6(self, value: float) -> float:
+        return math.floor(value * 1000000 + 0.5) / 1000000
+
+    # Trains the skip-gram model, yielding results as it goes: an InitResult once the
+    # training pairs are built, then an EpochResult every `step` epochs (and for the last epoch).
+    def train_skip_gram(self, opts: TrainingOptions) -> Iterator[InitResult | EpochResult | TrainEmbedResult]:
+        words = opts.words
+        epochs = opts.epochs
+        dim = opts.vector_size
+        window_size = opts.window_size
+        negative_samples = opts.negative_samples
+
+        # Uses the tokenizer and vocabulary built in __init__
+        vocab_size = self.vocabulary.size()
+        rand = self.mulberry32(42)
+
+        # Encode each sentence as vocabulary indices, then pair up nearby tokens
+        sentences = [self.vocabulary.encode(self.tokenize(sentence)) for sentence in CORPUS]
+        pairs = self.build_training_pairs(sentences, window_size)
+        print(f"Total training pairs: {len(pairs)}")
+
+        init_result = InitResult(
+            vocabSize=vocab_size,
+            sentenceCount=len(CORPUS),
+            embeddingDim=dim,
+            windowSize=window_size,
+            totalPairs=len(pairs)
+        )
+        yield init_result
+
+        cumulative = self.build_negative_sampling_table(self.vocabulary)
+        w_in, w_out = self.init_weights(vocab_size, dim, rand)
+
+        # How often (in epochs) to report progress: about 50 reports over the whole run,
+        # but never less than every epoch. For example, 200 epochs -> every 4th epoch;
+        # 30 epochs -> every epoch.
+        step = max(1, epochs // 50)
+
+        # The learning rate starts at lr_start and falls to lr_end over training, so early
+        # updates make big changes and later ones make fine adjustments.
+        lr_start = 0.025
+        lr_end = 0.001
+
+        # Note: epochs + 1 passes (0 to epochs inclusive), as in the TypeScript
+        for epoch in range(epochs + 1):
+            lr = self.learning_rate(epoch, epochs, lr_start, lr_end)
+            loss = self.train_epoch(pairs, w_in, w_out, dim, negative_samples, cumulative, rand, lr)
+            if epoch % step == 0 or epoch == epochs:
+                yield EpochResult(epoch=epoch, loss=self.round_6(loss))
