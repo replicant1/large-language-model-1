@@ -19,6 +19,13 @@ class TokenFreq:
     token: Token
     frequency: int
     
+# A sequence of tokens in order, keeping repeats, such as one word being split up
+# during training, or the output of tokenize().
+#
+# Example, after training on "fred fed ted bread, ted fed fred bread":
+#
+#   "fred" during training:  [f, r, e, d]  ->  after the (e, d) merge:  [f, r, ed]
+#   tokenize("fed red fed"):  [fed, r, ed, fed]
 class TokenList:
     def __init__(self):
         self.entries = []
@@ -42,8 +49,15 @@ class TokenList:
         for index, entry in enumerate(self.entries):
             print(f"Token[{index}]: {entry.token}")
       
-# List of frequencies with which each token occurs in a corpus, sorted from most 
-# frequent to least frequent. Each token appears only once.      
+# How often each token occurs in a corpus. Each token appears only once; adding a
+# token that is already present adds to its frequency. The set itself is unordered;
+# sorted_by_frequency() returns the entries most frequent first.
+#
+# Example, for "fred fed ted bread, ted fed fred bread":
+#
+#   entries:                {f:4, ed:6, d:8, t:2, e:8, ...}   (no fixed order)
+#   add(TokenFreq(ed, 1)):  ed:6 becomes ed:7
+#   sorted_by_frequency():  [d:8, e:8, ed:6, f:4, r:4, a:2, ...]
 class TokenFreqSet:
     def __init__(self):
         self.entries = set()
@@ -79,6 +93,59 @@ class TokenFreqSet:
 
     def __repr__(self) -> str:
         return "[" + ", ".join(f"{entry.token.token}: {entry.frequency}" for entry in self.sorted_by_frequency()) + "]"
+
+# Fixed table mapping each token to an index and back, built once from a TokenFreqSet.
+# The most frequent token gets index 0; ties are in token order.
+# Note that the index is *not* where a token appears in the text, but rather its position in the sorted frequency 
+# list. ie. it's rank by frequency
+#
+# Example, for "fred fed ted bread, ted fed fred bread":
+#
+#   sorted:          d:8, e:8, ed:6, f:4, r:4, a:2, ...
+#   index_to_token:  [d,   e,   ed,   f,   r,   a,  ...]
+#                     0    1    2     3    4    5
+#   token_to_index:  {d: 0, e: 1, ed: 2, f: 3, r: 4, a: 5, ...}
+class Vocabulary:
+    def __init__(self, token_freqs: TokenFreqSet):
+        sorted_entries = token_freqs.sorted_by_frequency()
+        self.index_to_token: list[Token] = [entry.token for entry in sorted_entries]
+        self.index_to_frequency: list[int] = [entry.frequency for entry in sorted_entries]
+        self.token_to_index: dict[Token, int] = {token: index for index, token in enumerate(self.index_to_token)}
+
+    # Number of tokens, which is also the number of rows needed in an embedding table
+    def size(self) -> int:
+        return len(self.index_to_token)
+
+    def contains(self, token: Token) -> bool:
+        return token in self.token_to_index
+
+    # Raises KeyError if the token is not in the vocabulary
+    def index_of(self, token: Token) -> int:
+        return self.token_to_index[token]
+
+    def token_at(self, index: int) -> Token:
+        return self.index_to_token[index]
+
+    def frequency_at(self, index: int) -> int:
+        return self.index_to_frequency[index]
+
+    # Converts a sequence of tokens into their indexes, in order.
+    # Tokens not in the vocabulary are dropped, since they have no index.
+    def encode(self, tokens: TokenList) -> list[int]:
+        return [self.token_to_index[token] for token in tokens.entries if token in self.token_to_index]
+
+    # Converts a sequence of indexes back into tokens, in order
+    def decode(self, indexes: list[int]) -> TokenList:
+        tokens = TokenList()
+        for index in indexes:
+            tokens.add(self.index_to_token[index])
+        return tokens
+
+    def __repr__(self) -> str:
+        return "[" + ", ".join(f"{index}: {token.token}" for index, token in enumerate(self.index_to_token)) + "]"
+
+    def __str__(self) -> str:
+        return self.__repr__()
 
 class BPETokenizer:
     def __init__(self):

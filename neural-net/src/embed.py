@@ -311,5 +311,6 @@ def train_skip_gram(opts: TrainingOptions) -> tuple[InitResult, EpochResult, Tra
     token_freq_set = tokenizer.train_bpe(" ".join(CORPUS).lower(), 500)
     tokenized_sentences: list[TokenList] = []
     for sentence in CORPUS:
-        tokenized_sentences.append(tokenizer.tokenize(sentence.lower()))
+        tokens = tokenizer.tokenize(sentence.lower())
+        tokenized_sentences.append(tokens)
     return (None, None, None)

@@ -5,6 +5,8 @@ from bpe import Token
 from bpe import BPETokenizer
 from bpe import MergeRule
 from bpe import TokenFreq
+from bpe import TokenFreqSet
+from bpe import Vocabulary
 
 class TestBPETokenizer(unittest.TestCase):
     def setUp(self):
@@ -223,6 +225,65 @@ class TestBPETokenizer(unittest.TestCase):
 
     def _strings(self, token_list: TokenList) -> list[str]:
         return [token.token for token in token_list.entries]
+
+class TestVocabulary(unittest.TestCase):
+    def setUp(self):
+        # "ed" is most frequent; "a" and "b" tie, so they are in token order
+        token_freqs = TokenFreqSet()
+        for token_string, freq in [("b", 2), ("ed", 6), ("a", 2), ("z", 1)]:
+            token_freqs.add(TokenFreq(Token(token_string), freq))
+        self.vocabulary = Vocabulary(token_freqs)
+
+    def test_indexes_are_by_frequency_then_token(self):
+        self.assertEqual(["ed", "a", "b", "z"], [token.token for token in self.vocabulary.index_to_token])
+
+    def test_size(self):
+        self.assertEqual(4, self.vocabulary.size())
+
+    def test_index_of_and_token_at_are_inverses(self):
+        self.assertEqual(0, self.vocabulary.index_of(Token("ed")))
+        self.assertEqual(Token("b"), self.vocabulary.token_at(2))
+        for index in range(self.vocabulary.size()):
+            self.assertEqual(index, self.vocabulary.index_of(self.vocabulary.token_at(index)))
+
+    def test_index_of_unknown_token_raises(self):
+        with self.assertRaises(KeyError):
+            self.vocabulary.index_of(Token("q"))
+
+    def test_contains(self):
+        self.assertTrue(self.vocabulary.contains(Token("ed")))
+        self.assertFalse(self.vocabulary.contains(Token("q")))
+
+    def test_frequency_at(self):
+        self.assertEqual(6, self.vocabulary.frequency_at(0))
+        self.assertEqual(1, self.vocabulary.frequency_at(3))
+
+    def test_encode_keeps_order_and_repeats(self):
+        tokens = TokenList()
+        for token_string in ["b", "ed", "b", "z"]:
+            tokens.add(Token(token_string))
+        self.assertEqual([2, 0, 2, 3], self.vocabulary.encode(tokens))
+
+    def test_encode_drops_unknown_tokens(self):
+        tokens = TokenList()
+        for token_string in ["a", "q", "ed"]:
+            tokens.add(Token(token_string))
+        self.assertEqual([1, 0], self.vocabulary.encode(tokens))
+
+    def test_decode_reverses_encode(self):
+        tokens = TokenList()
+        for token_string in ["z", "a", "ed", "a"]:
+            tokens.add(Token(token_string))
+        decoded = self.vocabulary.decode(self.vocabulary.encode(tokens))
+        self.assertEqual(["z", "a", "ed", "a"], [token.token for token in decoded.entries])
+
+    def test_vocabulary_from_trained_tokenizer(self):
+        tokenizer = BPETokenizer()
+        vocabulary = Vocabulary(tokenizer.train_bpe("fred fed ted bread, ted fed fred bread"))
+        self.assertEqual(17, vocabulary.size())
+        self.assertEqual([Token("d"), Token("e"), Token("ed")], vocabulary.index_to_token[:3])
+        encoded = vocabulary.encode(tokenizer.tokenize("fed red"))
+        self.assertEqual(["fed", "r", "ed"], [token.token for token in vocabulary.decode(encoded).entries])
 
 if __name__ == "__main__":
     unittest.main()
