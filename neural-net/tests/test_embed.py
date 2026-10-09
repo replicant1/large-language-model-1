@@ -7,6 +7,7 @@ from bpe import TokenFreq
 from bpe import TokenFreqSet
 from bpe import Vocabulary
 from embed import Embed
+from embed import EmbeddingVector
 from embed import TrainingOptions
 from embed import InitResult
 from embed import EpochResult
@@ -20,6 +21,41 @@ def setUpModule():
     global EMBED
     with contextlib.redirect_stdout(io.StringIO()):
         EMBED = Embed()
+
+
+class TestEmbeddingVector(unittest.TestCase):
+    def test_size(self):
+        self.assertEqual(3, EmbeddingVector([1.0, 2.0, 0.5]).size())
+
+    def test_dot_example_from_comment(self):
+        a = EmbeddingVector([1.0, 2.0, 0.5])
+        b = EmbeddingVector([0.5, -1.0, 2.0])
+        self.assertAlmostEqual(-0.5, a.dot(b))
+
+    def test_dot_is_symmetric(self):
+        a = EmbeddingVector([0.3, -0.7, 1.1])
+        b = EmbeddingVector([2.0, 0.4, -0.2])
+        self.assertEqual(a.dot(b), b.dot(a))
+
+    def test_add_scaled_example_from_comment(self):
+        a = EmbeddingVector([1.0, 2.0, 0.5])
+        b = EmbeddingVector([0.5, -1.0, 2.0])
+        a.add_scaled(b, 0.1)
+        for expected, actual in zip([1.05, 1.9, 0.7], a.values):
+            self.assertAlmostEqual(expected, actual)
+        self.assertEqual([0.5, -1.0, 2.0], b.values)
+
+    def test_add_scaled_with_negative_factor_moves_away(self):
+        a = EmbeddingVector([1.0, 1.0])
+        a.add_scaled(EmbeddingVector([2.0, 4.0]), -0.5)
+        self.assertEqual([0.0, -1.0], a.values)
+
+    def test_copy_is_independent(self):
+        a = EmbeddingVector([1.0, 2.0])
+        b = a.copy()
+        b.add_scaled(EmbeddingVector([1.0, 1.0]), 1.0)
+        self.assertEqual([1.0, 2.0], a.values)
+        self.assertEqual([2.0, 3.0], b.values)
 
 
 class TestBuildTrainingPairs(unittest.TestCase):
@@ -107,24 +143,36 @@ class TestSampleNegative(unittest.TestCase):
 
 
 class TestInitWeights(unittest.TestCase):
-    def test_sizes(self):
+    def test_one_vector_per_token_of_the_right_size(self):
         w_in, w_out = EMBED.init_weights(5, 3, EMBED.mulberry32(1))
-        self.assertEqual(15, len(w_in))
-        self.assertEqual(15, len(w_out))
+        self.assertEqual(5, len(w_in))
+        self.assertEqual(5, len(w_out))
+        for vector in w_in + w_out:
+            self.assertIsInstance(vector, EmbeddingVector)
+            self.assertEqual(3, vector.size())
 
     def test_values_within_scale(self):
         dim = 4
         half_scale = 0.5 / dim / 2
         w_in, w_out = EMBED.init_weights(10, dim, EMBED.mulberry32(7))
-        for weight in w_in + w_out:
-            self.assertLessEqual(abs(weight), half_scale)
+        for vector in w_in + w_out:
+            for weight in vector.values:
+                self.assertLessEqual(abs(weight), half_scale)
+
+    def test_vectors_are_separate_objects(self):
+        w_in, w_out = EMBED.init_weights(3, 2, EMBED.mulberry32(1))
+        self.assertEqual(6, len({id(vector) for vector in w_in + w_out}))
 
     def test_matches_typescript_for_seed_42(self):
-        # Reference values from running the TypeScript initialisation with EMBED.mulberry32(42),
-        # vocabSize = 2, dim = 2
+        # Reference values from running the TypeScript initialisation with mulberry32(42),
+        # vocabSize = 2, dim = 2. The TypeScript stores them flat: token 0 then token 1.
         w_in, w_out = EMBED.init_weights(2, 2, EMBED.mulberry32(42))
-        self.assertEqual([0.025275937980040908, 0.08811644837260246, -0.08129652531351894, -0.056693001417443156], w_in)
-        self.assertEqual([-0.012927360250614583, 0.04243351035984233, 0.006648135546129197, 0.031186163483653218], w_out)
+        self.assertEqual([[0.025275937980040908, 0.08811644837260246],
+                          [-0.08129652531351894, -0.056693001417443156]],
+                         [vector.values for vector in w_in])
+        self.assertEqual([[-0.012927360250614583, 0.04243351035984233],
+                          [0.006648135546129197, 0.031186163483653218]],
+                         [vector.values for vector in w_out])
 
 
 class TestShuffle(unittest.TestCase):
@@ -169,63 +217,76 @@ class TestLearningRate(unittest.TestCase):
 
 class TestTrainPair(unittest.TestCase):
     def test_positive_example_from_comment(self):
-        w_in = [0.5, 0.5]
-        w_out = [0.5, -0.5]
-        loss = EMBED.train_pair(w_in, w_out, 2, 0, 0, 1, 0.1)
-        for expected, actual in zip([0.525, 0.475], w_in):
+        w_in = [EmbeddingVector([0.5, 0.5])]
+        w_out = [EmbeddingVector([0.5, -0.5])]
+        loss = EMBED.train_pair(w_in, w_out, 0, 0, 1, 0.1)
+        for expected, actual in zip([0.525, 0.475], w_in[0].values):
             self.assertAlmostEqual(expected, actual)
-        for expected, actual in zip([0.525, -0.475], w_out):
+        for expected, actual in zip([0.525, -0.475], w_out[0].values):
             self.assertAlmostEqual(expected, actual)
         self.assertAlmostEqual(math.log(2), loss)
 
     def test_positive_pair_score_goes_up(self):
-        # Rows: target is token 0 in w_in, other is token 1 in w_out
-        w_in = [0.1, 0.2, 0.0, 0.0]
-        w_out = [0.0, 0.0, 0.3, -0.1]
-        before = self._dot(w_in, w_out, 0, 1)
-        EMBED.train_pair(w_in, w_out, 2, 0, 1, 1, 0.5)
-        self.assertGreater(self._dot(w_in, w_out, 0, 1), before)
+        # target is token 0 in w_in, other is token 1 in w_out
+        w_in = [EmbeddingVector([0.1, 0.2]), EmbeddingVector([0.0, 0.0])]
+        w_out = [EmbeddingVector([0.0, 0.0]), EmbeddingVector([0.3, -0.1])]
+        before = w_in[0].dot(w_out[1])
+        EMBED.train_pair(w_in, w_out, 0, 1, 1, 0.5)
+        self.assertGreater(w_in[0].dot(w_out[1]), before)
 
     def test_negative_pair_score_goes_down(self):
-        w_in = [0.1, 0.2, 0.0, 0.0]
-        w_out = [0.0, 0.0, 0.3, -0.1]
-        before = self._dot(w_in, w_out, 0, 1)
-        EMBED.train_pair(w_in, w_out, 2, 0, 1, 0, 0.5)
-        self.assertLess(self._dot(w_in, w_out, 0, 1), before)
+        w_in = [EmbeddingVector([0.1, 0.2]), EmbeddingVector([0.0, 0.0])]
+        w_out = [EmbeddingVector([0.0, 0.0]), EmbeddingVector([0.3, -0.1])]
+        before = w_in[0].dot(w_out[1])
+        EMBED.train_pair(w_in, w_out, 0, 1, 0, 0.5)
+        self.assertLess(w_in[0].dot(w_out[1]), before)
 
-    def test_only_the_two_rows_change(self):
-        w_in = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
-        w_out = [0.6, 0.5, 0.4, 0.3, 0.2, 0.1]
-        EMBED.train_pair(w_in, w_out, 2, 0, 2, 1, 0.5)
-        self.assertEqual([0.3, 0.4, 0.5, 0.6], w_in[2:])
-        self.assertEqual([0.6, 0.5, 0.4, 0.3], w_out[:4])
+    def test_only_the_two_vectors_change(self):
+        w_in = [EmbeddingVector([0.1, 0.2]), EmbeddingVector([0.3, 0.4]), EmbeddingVector([0.5, 0.6])]
+        w_out = [EmbeddingVector([0.6, 0.5]), EmbeddingVector([0.4, 0.3]), EmbeddingVector([0.2, 0.1])]
+        EMBED.train_pair(w_in, w_out, 0, 2, 1, 0.5)
+        self.assertEqual([[0.3, 0.4], [0.5, 0.6]], [vector.values for vector in w_in[1:]])
+        self.assertEqual([[0.6, 0.5], [0.4, 0.3]], [vector.values for vector in w_out[:2]])
+
+    def test_both_vectors_use_values_from_before_the_update(self):
+        # Both vectors start at [1.0], so dot = 1.0. lr is chosen so that grad = 0.5.
+        # Each vector should become 1.0 + 0.5 * 1.0 = 1.5. If w_out were updated with the
+        # already-updated w_in value instead, it would become 1.0 + 0.5 * 1.5 = 1.75.
+        w_in = [EmbeddingVector([1.0])]
+        w_out = [EmbeddingVector([1.0])]
+        score = EMBED.sigmoid(1.0)
+        lr = 0.5 / (1 - score)
+        EMBED.train_pair(w_in, w_out, 0, 0, 1, lr)
+        self.assertAlmostEqual(1.5, w_in[0].values[0])
+        self.assertAlmostEqual(1.5, w_out[0].values[0])
 
     def test_loss_for_negative_pair(self):
         # dot = 0 -> score 0.5 -> loss = -log(1 - 0.5)
-        self.assertAlmostEqual(math.log(2), EMBED.train_pair([0.0, 0.0], [0.0, 0.0], 2, 0, 0, 0, 0.1))
-
-    def _dot(self, w_in, w_out, target, other, dim=2):
-        return sum(w_in[target * dim + d] * w_out[other * dim + d] for d in range(dim))
+        w_in = [EmbeddingVector([0.0, 0.0])]
+        w_out = [EmbeddingVector([0.0, 0.0])]
+        self.assertAlmostEqual(math.log(2), EMBED.train_pair(w_in, w_out, 0, 0, 0, 0.1))
 
 
 class TestTrainEpoch(unittest.TestCase):
     def test_no_pairs_gives_zero_loss(self):
-        self.assertEqual(0.0, EMBED.train_epoch([], [0.0], [0.0], 1, 3, [1.0], EMBED.mulberry32(1), 0.1))
+        w_in = [EmbeddingVector([0.0])]
+        w_out = [EmbeddingVector([0.0])]
+        self.assertEqual(0.0, EMBED.train_epoch([], w_in, w_out, 3, [1.0], EMBED.mulberry32(1), 0.1))
 
     def test_loss_falls_over_epochs(self):
         rand = EMBED.mulberry32(42)
-        w_in = [(rand() - 0.5) * 0.1 for _ in range(4 * 2)]
-        w_out = [(rand() - 0.5) * 0.1 for _ in range(4 * 2)]
+        w_in = [EmbeddingVector([(rand() - 0.5) * 0.1 for _ in range(2)]) for _ in range(4)]
+        w_out = [EmbeddingVector([(rand() - 0.5) * 0.1 for _ in range(2)]) for _ in range(4)]
         pairs = [(0, 1), (1, 0), (2, 3), (3, 2)]
         cumulative = [0.25, 0.5, 0.75, 1.0]
-        losses = [EMBED.train_epoch(pairs, w_in, w_out, 2, 2, cumulative, rand, 0.5) for _ in range(30)]
+        losses = [EMBED.train_epoch(pairs, w_in, w_out, 2, cumulative, rand, 0.5) for _ in range(30)]
         self.assertLess(losses[-1], losses[0])
 
     def test_negative_equal_to_context_is_skipped(self):
         # Only one token, so every negative is the context itself: only the positive is trained
-        w_in = [0.0, 0.0]
-        w_out = [0.0, 0.0]
-        loss = EMBED.train_epoch([(0, 0)], w_in, w_out, 2, 5, [1.0], EMBED.mulberry32(1), 0.1)
+        w_in = [EmbeddingVector([0.0, 0.0])]
+        w_out = [EmbeddingVector([0.0, 0.0])]
+        loss = EMBED.train_epoch([(0, 0)], w_in, w_out, 5, [1.0], EMBED.mulberry32(1), 0.1)
         self.assertAlmostEqual(math.log(2), loss)
 
 

@@ -274,6 +274,48 @@ class TrainEmbedResult:
     warnings: list[str]
     
 
+# One token's vector of weights: a fixed number of values (the vector size) that are
+# adjusted during training. Tokens used in similar contexts end up with vectors that
+# point in similar directions.
+#
+# Unlike the token classes, this is not frozen: training changes the values in place.
+#
+# Example, vector size 3:
+#
+#   a = EmbeddingVector([1.0, 2.0, 0.5]),  b = EmbeddingVector([0.5, -1.0, 2.0])
+#   a.dot(b)             ->  1.0*0.5 + 2.0*-1.0 + 0.5*2.0 = -0.5
+#   a.add_scaled(b, 0.1) ->  a becomes [1.05, 1.9, 0.7]
+class EmbeddingVector:
+    def __init__(self, values: list[float]):
+        self.values = values
+
+    def size(self) -> int:
+        return len(self.values)
+
+    # How strongly two vectors agree: large and positive when they point the same way,
+    # near zero when unrelated, negative when they point in opposite directions.
+    # (Adds the products one at a time, in order, rather than using sum(), whose
+    # extra-precise float addition in newer Pythons would give slightly different results
+    # from the TypeScript.)
+    def dot(self, other: EmbeddingVector) -> float:
+        result = 0.0
+        for d in range(len(self.values)):
+            result += self.values[d] * other.values[d]
+        return result
+
+    # Moves this vector by factor * other: towards other if factor is positive,
+    # away from it if negative. other is not changed.
+    def add_scaled(self, other: EmbeddingVector, factor: float) -> None:
+        for d in range(len(self.values)):
+            self.values[d] += factor * other.values[d]
+
+    # A separate vector with the same values, so changing one does not change the other
+    def copy(self) -> EmbeddingVector:
+        return EmbeddingVector(list(self.values))
+
+    def __repr__(self) -> str:
+        return f"EmbeddingVector({self.values})"
+
 # Trains word embeddings on CORPUS: learns BPE tokens, builds a fixed vocabulary, then
 # trains a skip-gram model with negative sampling (see train_skip_gram).
 class Embed:
@@ -411,24 +453,30 @@ class Embed:
     # token's vector different but close to zero, so no token starts out favoured.
     #
     # w_in holds each token's embedding as a target (the vectors we keep at the end);
-    # w_out holds each token's vector as a context. Both have one row of dim numbers
-    # per vocabulary index, stored flat in a single list, so row t, column d is at
-    # index t * dim + d.
+    # w_out holds each token's vector as a context. Each is a list with one
+    # EmbeddingVector of dim values per vocabulary index, so w_in[9] is the target
+    # vector for the token at index 9.
     #
     # Example, with vocab_size = 3 and dim = 2:
     #
-    #   w_in = [t0d0, t0d1,  t1d0, t1d1,  t2d0, t2d1]
-    #           \__row 0__/  \__row 1__/  \__row 2__/
+    #   w_in = [EmbeddingVector([t0d0, t0d1]),    <- token 0
+    #           EmbeddingVector([t1d0, t1d1]),    <- token 1
+    #           EmbeddingVector([t2d0, t2d1])]    <- token 2
     #
-    # The rand() calls alternate between w_in and w_out, as in the TypeScript,
-    # so the same seed gives the same starting weights in both versions.
-    def init_weights(self, vocab_size: int, dim: int, rand: Callable[[], float]) -> tuple[list[float], list[float]]:
+    # The rand() calls alternate between w_in and w_out, value by value, as in the
+    # TypeScript, so the same seed gives the same starting weights in both versions.
+    def init_weights(self, vocab_size: int, dim: int, rand: Callable[[], float]) -> tuple[list[EmbeddingVector], list[EmbeddingVector]]:
         scale = 0.5 / dim
-        w_in: list[float] = [0.0] * (vocab_size * dim)
-        w_out: list[float] = [0.0] * (vocab_size * dim)
-        for i in range(len(w_in)):
-            w_in[i] = (rand() - 0.5) * scale
-            w_out[i] = (rand() - 0.5) * scale
+        w_in: list[EmbeddingVector] = []
+        w_out: list[EmbeddingVector] = []
+        for _ in range(vocab_size):
+            in_values: list[float] = []
+            out_values: list[float] = []
+            for _ in range(dim):
+                in_values.append((rand() - 0.5) * scale)
+                out_values.append((rand() - 0.5) * scale)
+            w_in.append(EmbeddingVector(in_values))
+            w_out.append(EmbeddingVector(out_values))
         return w_in, w_out
 
     # Fisher-Yates shuffle: puts the pairs into a random order, in place.
@@ -463,40 +511,37 @@ class Embed:
     #
     # label is 1 for a positive pair (other really is near target in the text) and 0 for a
     # negative sample (other is a random token). The model's score for the pair is
-    # sigmoid(dot product of target's w_in row and other's w_out row), a value from 0 to 1.
+    # sigmoid(target's w_in vector . other's w_out vector), a value from 0 to 1.
     # Training moves the score towards the label:
     #
     #   positive (label 1):  grad = lr * (1 - score)  ->  the two vectors move closer together
     #   negative (label 0):  grad = lr * (0 - score)  ->  the two vectors move apart
     #
-    # Both rows are updated using each other's values from before the update, which is why
-    # the old w_in value is saved first.
+    # Both vectors are updated using each other's values from before the update, which is
+    # why a copy of the target vector is taken first.
     #
     # The loss measures how wrong the score was: -log(score) for a positive and
     # -log(1 - score) for a negative. It is 0 for a perfect score and grows as the score
     # gets worse. 1e-10 stops log(0) when a score is exactly 0 or 1.
     #
-    # Example, positive pair, dim = 2, lr = 0.1:
+    # Example, positive pair, vector size 2, lr = 0.1:
     #
-    #   target row (w_in) = [0.5, 0.5],  other row (w_out) = [0.5, -0.5]
+    #   target vector (w_in) = [0.5, 0.5],  other vector (w_out) = [0.5, -0.5]
     #   dot = 0.25 - 0.25 = 0  ->  score = sigmoid(0) = 0.5  ->  grad = 0.1 * (1 - 0.5) = 0.05
-    #   target row becomes [0.5 + 0.05*0.5, 0.5 + 0.05*-0.5] = [0.525, 0.475]
-    #   other row becomes  [0.5 + 0.05*0.5, -0.5 + 0.05*0.5] = [0.525, -0.475]
+    #   target vector becomes [0.5 + 0.05*0.5, 0.5 + 0.05*-0.5] = [0.525, 0.475]
+    #   other vector becomes  [0.5 + 0.05*0.5, -0.5 + 0.05*0.5] = [0.525, -0.475]
     #   loss = -log(0.5) = 0.693
-    def train_pair(self, w_in: list[float], w_out: list[float], dim: int,
+    def train_pair(self, w_in: list[EmbeddingVector], w_out: list[EmbeddingVector],
                    target: int, other: int, label: int, lr: float) -> float:
-        t_off = target * dim
-        o_off = other * dim
+        target_vector = w_in[target]
+        other_vector = w_out[other]
 
-        dot = 0.0
-        for d in range(dim):
-            dot += w_in[t_off + d] * w_out[o_off + d]
-        score = self.sigmoid(dot)
+        score = self.sigmoid(target_vector.dot(other_vector))
         grad = lr * (label - score)
-        for d in range(dim):
-            w_in_d = w_in[t_off + d]
-            w_in[t_off + d] += grad * w_out[o_off + d]
-            w_out[o_off + d] += grad * w_in_d
+
+        old_target_vector = target_vector.copy()
+        target_vector.add_scaled(other_vector, grad)
+        other_vector.add_scaled(old_target_vector, grad)
 
         if label == 1:
             return -math.log(score + 1e-10)
@@ -506,7 +551,7 @@ class Embed:
     # positive pair and on negative_samples random negatives. Returns the average loss per pair.
     #
     # A negative that happens to be the real context is skipped, since it isn't really "wrong".
-    def train_epoch(self, pairs: list[tuple[int, int]], w_in: list[float], w_out: list[float], dim: int,
+    def train_epoch(self, pairs: list[tuple[int, int]], w_in: list[EmbeddingVector], w_out: list[EmbeddingVector],
                     negative_samples: int, cumulative: list[float], rand: Callable[[], float],
                     lr: float) -> float:
         if not pairs:
@@ -517,14 +562,14 @@ class Embed:
 
         for target, context in pairs:
             # Positive sample: push target and context closer
-            total_loss += self.train_pair(w_in, w_out, dim, target, context, 1, lr)
+            total_loss += self.train_pair(w_in, w_out, target, context, 1, lr)
 
             # Negative samples: push target and random tokens apart
             for _ in range(negative_samples):
                 neg = self.sample_negative(cumulative, rand)
                 if neg == context:
                     continue
-                total_loss += self.train_pair(w_in, w_out, dim, target, neg, 0, lr)
+                total_loss += self.train_pair(w_in, w_out, target, neg, 0, lr)
 
         return total_loss / len(pairs)
 
@@ -575,6 +620,6 @@ class Embed:
         # Note: epochs + 1 passes (0 to epochs inclusive), as in the TypeScript
         for epoch in range(epochs + 1):
             lr = self.learning_rate(epoch, epochs, lr_start, lr_end)
-            loss = self.train_epoch(positive_pairs, w_in, w_out, embeded_vector_size, negative_samples, negative_sampling_table, rand, lr)
+            loss = self.train_epoch(positive_pairs, w_in, w_out, negative_samples, negative_sampling_table, rand, lr)
             if epoch % step == 0 or epoch == epochs:
                 yield EpochResult(epoch=epoch, loss=self.round_6(loss))
