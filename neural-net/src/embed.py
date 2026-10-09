@@ -3,7 +3,7 @@ from typing import Callable, Iterator
 import math
 from dataclasses import dataclass
 
-from bpe import BPETokenizer, TokenFreqSet, TokenList, Vocabulary
+from bpe import BPETokenizer, Token, TokenFreqSet, TokenList, Vocabulary
 
 ## Curated training corpus for Word2Vec Skip-gram and transformer training.
 ##
@@ -267,7 +267,7 @@ class Analogy:
     
 @dataclass(frozen=True)
 class TrainEmbedResult:
-    embeddings: list[list[float]]
+    embeddings: list[WordEmbedding]
     neightbors: list[Neighbor]
     similarities: list[SimilarityPair]
     analogies: list[Analogy]
@@ -578,6 +578,41 @@ class Embed:
     def round_6(self, value: float) -> float:
         return math.floor(value * 1000000 + 0.5) / 1000000
 
+    # Rounds to 2 decimal places, rounding halves up like JavaScript's Math.round (see round_6)
+    def round_2(self, value: float) -> float:
+        return math.floor(value * 100 + 0.5) / 100
+
+    # How closely two vectors point the same way, ignoring their lengths:
+    # 1 for the same direction, 0 for unrelated, -1 for opposite.
+    # Returns 0 if either vector is all zeros, since it then has no direction.
+    def cosine_similarity(self, a: list[float], b: list[float]) -> float:
+        vector_a = EmbeddingVector(a)
+        vector_b = EmbeddingVector(b)
+        length_product = math.sqrt(vector_a.dot(vector_a)) * math.sqrt(vector_b.dot(vector_b))
+        if length_product == 0:
+            return 0.0
+        return vector_a.dot(vector_b) / length_product
+
+    # A word's embedding as a plain list, rounded to 6 decimal places
+    def get_vector(self, w_in: list[EmbeddingVector], word_index: int) -> list[float]:
+        return [self.round_6(value) for value in w_in[word_index].values]
+
+    # Looks up each query word in the vocabulary. Returns the indexes of words that are
+    # single BPE tokens, plus a warning for each word that splits into several tokens.
+    def find_query_indices(self, words: list[str]) -> tuple[list[int], list[str]]:
+        warnings: list[str] = []
+        query_indices: list[int] = []
+
+        for word in words:
+            index = self.vocabulary.token_to_index.get(Token(word.lower()))
+            if index is None:
+                bpe_tokens = [token.token for token in self.tokenizer.split_word(word.lower()).entries]
+                warnings.append(f'"{word}" is not a single BPE token — it splits into [{", ".join(bpe_tokens)}]')
+            else:
+                query_indices.append(index)
+
+        return query_indices, warnings
+
     # Trains the skip-gram model, yielding results as it goes: an InitResult once the
     # training pairs are built, then an EpochResult every `step` epochs (and for the last epoch).
     def train_skip_gram(self, opts: TrainingOptions) -> Iterator[InitResult | EpochResult | TrainEmbedResult]:
@@ -623,3 +658,45 @@ class Embed:
             loss = self.train_epoch(positive_pairs, w_in, w_out, negative_samples, negative_sampling_table, rand, lr)
             if epoch % step == 0 or epoch == epochs:
                 yield EpochResult(epoch=epoch, loss=self.round_6(loss))
+
+        # Report on the query words that are single tokens; the rest only get a warning
+        query_indices, warnings = self.find_query_indices(words)
+
+        embeddings = [WordEmbedding(word=self.vocabulary.token_at(index).token, vector=self.get_vector(w_in, index))
+                      for index in query_indices]
+
+        # Nearest neighbors for each query word: the 5 other tokens with the most similar vectors
+        neighbors: list[Neighbor] = []
+        for query_index in query_indices:
+            query_vector = self.get_vector(w_in, query_index)
+            scores: list[NeighborScore] = []
+            for index in range(vocab_size):
+                if index == query_index:
+                    continue
+                scores.append(NeighborScore(
+                    word=self.vocabulary.token_at(index).token,
+                    score=self.round_2(self.cosine_similarity(query_vector, self.get_vector(w_in, index)))
+                ))
+            # sort() is stable, like JavaScript's, so tied scores keep vocabulary order
+            scores.sort(key=lambda neighbor_score: neighbor_score.score, reverse=True)
+            neighbors.append(Neighbor(word=self.vocabulary.token_at(query_index).token, nearest=scores[:5]))
+
+        # Pairwise similarity between query words
+        similarities: list[SimilarityPair] = []
+        for i in range(len(query_indices)):
+            for j in range(i + 1, len(query_indices)):
+                similarities.append(SimilarityPair(
+                    a=self.vocabulary.token_at(query_indices[i]).token,
+                    b=self.vocabulary.token_at(query_indices[j]).token,
+                    score=self.round_2(self.cosine_similarity(self.get_vector(w_in, query_indices[i]),
+                                                              self.get_vector(w_in, query_indices[j])))
+                ))
+
+        # TODO: analogies, once the rest of the TypeScript is ported
+        yield TrainEmbedResult(
+            embeddings=embeddings,
+            neightbors=neighbors,
+            similarities=similarities,
+            analogies=[],
+            warnings=warnings
+        )

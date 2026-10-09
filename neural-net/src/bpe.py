@@ -95,8 +95,8 @@ class TokenFreqSet:
         return "[" + ", ".join(f"{entry.token.token}: {entry.frequency}" for entry in self.sorted_by_frequency()) + "]"
 
 # Fixed table mapping each token to an index and back, built once from a TokenFreqSet.
-# The most frequent token gets index 0; ties are in token order.
-# Note that the index is *not* where a token appears in the text, but rather its position in the sorted frequency 
+# The most frequent token gets index 0; if two tokens have the same frequency, they are in token order.
+# Note that the index is *not* where a token appears in the text, but rather its position in the sorted-by-frequency 
 # list. ie. it's rank by frequency
 #
 # Example, for "fred fed ted bread, ted fed fred bread":
@@ -183,8 +183,10 @@ class BPETokenizer:
         print("--- END OF ADJACENT TOKEN PAIR COUNTS ---")
         return pairs
     
-    def apply_merge_rule_to_token_list(self, input_tokens: TokenList, merge_rule: MergeRule) -> TokenList:
-        print(f"Applying merge rule: {merge_rule} to input_tokens: {input_tokens.entries}")
+    # Pass verbose=False to skip the progress printing, e.g. when tokenizing after training
+    def apply_merge_rule_to_token_list(self, input_tokens: TokenList, merge_rule: MergeRule, verbose: bool = True) -> TokenList:
+        if verbose:
+            print(f"Applying merge rule: {merge_rule} to input_tokens: {input_tokens.entries}")
         result = TokenList()
         i = 0
         while i < len(input_tokens.entries):
@@ -195,8 +197,9 @@ class BPETokenizer:
             else:
                 result.entries.append(input_tokens.entries[i])
                 i += 1
-        print(f"Result after applying merge rule: {result.entries}\n")
-        return result   
+        if verbose:
+            print(f"Result after applying merge rule: {result.entries}\n")
+        return result
     
     # Applies a merge rule to every word's token list.
     # Returns a new dictionary; the input dictionary and its token lists are left unchanged.
@@ -207,18 +210,28 @@ class BPETokenizer:
             merged_word_to_token_list[word] = self.apply_merge_rule_to_token_list(token_list, merge_rule)
         return merged_word_to_token_list
     
+    # You must have already called train_bpe before using this method.
+    # Splits a single word into characters, then applies the learned merge rules
+    # in the order they were learned. Prints nothing.
+    #
+    # Example, after training on "fred fed ted bread, ted fed fred bread":
+    #
+    #   split_word("red"):  [r, ed]
+    def split_word(self, word: str) -> TokenList:
+        word_tokens = TokenList()
+        for char in word:
+            word_tokens.add(Token(char))
+        for merge_rule in self.merge_rules:
+            word_tokens = self.apply_merge_rule_to_token_list(word_tokens, merge_rule, verbose=False)
+        return word_tokens
+
     # You must have already called train_bpe before using this method to tokenize text.
-    # Splits text into words the same way training does, then applies the learned
-    # merge rules to each word in the order they were learned.
+    # Splits text into words the same way training does, then splits each word into
+    # tokens with split_word.
     def tokenize(self, text: str) -> TokenList:
         result = TokenList()
         for word in self.split_into_words(text):
-            word_tokens = TokenList()
-            for char in word:
-                word_tokens.add(Token(char))
-            for merge_rule in self.merge_rules:
-                word_tokens = self.apply_merge_rule_to_token_list(word_tokens, merge_rule)
-            for token in word_tokens.entries:
+            for token in self.split_word(word).entries:
                 result.add(token)
         return result
         
