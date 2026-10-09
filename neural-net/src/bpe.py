@@ -131,12 +131,14 @@ class BPETokenizer:
         print(f"Result after applying merge rule: {result.entries}\n")
         return result   
     
-    # Merges the most frequent pair in all words in the vocabulary
+    # Applies a merge rule to every word's token list.
+    # Returns a new dictionary; the input dictionary and its token lists are left unchanged.
     def apply_merge_rule_to_token_map(self, word_to_token_list: dict[str, TokenList], merge_rule: MergeRule) -> dict[str, TokenList]:
+        merged_word_to_token_list = dict[str, TokenList]()
         for word, token_list in word_to_token_list.items():
             print(f"Applying merge rule to TokenList for word: {word}")
-            word_to_token_list[word] = self.apply_merge_rule_to_token_list(token_list, merge_rule)
-        return word_to_token_list
+            merged_word_to_token_list[word] = self.apply_merge_rule_to_token_list(token_list, merge_rule)
+        return merged_word_to_token_list
     
     # You must have already called train_bpe before using this method to tokenize text.
     # Splits text into words the same way training does, then applies the learned

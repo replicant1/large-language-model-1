@@ -2,7 +2,7 @@ from typing import Callable
 import math
 from dataclasses import dataclass
 
-from bpe import BPETokenizer, TokenSet
+from bpe import BPETokenizer, TokenFreqSet, TokenList
 
 ## Curated training corpus for Word2Vec Skip-gram and transformer training.
 ##
@@ -198,10 +198,10 @@ STORIES = [
 class Embed:
     def __init__(self):
         self.tokenizer = BPETokenizer()
-        self.token_set = self.tokenizer.train_bpe_from_corpus(CORPUS.join(" ").toLowerCase(), 500)
+        self.token_freq_set: TokenFreqSet = self.tokenizer.train_bpe(" ".join(CORPUS).lower(), 500)
     
-    def tokenize(self, text: str) -> TokenSet:
-        return self.tokenizer.train_bpe_from_corpus(text.toLowerCase(), 500)
+    def tokenize(self, text: str) -> TokenList:
+        return self.tokenizer.tokenize(text.lower())
 
 # /** Build a vocabulary from the corpus — returns word↔index mappings sorted by frequency (most common first). */
 # export function buildVocab(corpus: string[]) {
@@ -308,7 +308,8 @@ def train_skip_gram(opts: TrainingOptions) -> tuple[InitResult, EpochResult, Tra
     # Every word is paired with every other word within the window centered on itself.
     pairs: list[tuple[int, int]] = []
     tokenizer = BPETokenizer()
-    token_freq_set =tokenizer.train_bpe(" ".join(CORPUS).to_lower(), 500)
+    token_freq_set = tokenizer.train_bpe(" ".join(CORPUS).lower(), 500)
+    tokenized_sentences: list[TokenList] = []
     for sentence in CORPUS:
-        tokenizer.tokenize(sentence)
+        tokenized_sentences.append(tokenizer.tokenize(sentence.lower()))
     return (None, None, None)

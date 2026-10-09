@@ -181,6 +181,37 @@ class TestBPETokenizer(unittest.TestCase):
         self.assertEqual(["ab", "c"], self._strings(merged_token_list))
         self.assertEqual(["a", "b", "c"], self._strings(input_tokens))
 
+    # --- apply_merge_rule_to_token_map ---
+
+    def test_merge_map_applies_rule_to_every_word(self):
+        word_to_token_list = {
+            "fed": self._token_list(["f", "e", "d"]),
+            "ted": self._token_list(["t", "e", "d"]),
+            "bread": self._token_list(["b", "r", "e", "a", "d"]),
+        }
+        merge_rule = MergeRule((Token("e"), Token("d")), Token("ed"))
+        merged = self.tokenizer.apply_merge_rule_to_token_map(word_to_token_list, merge_rule)
+        self.assertEqual({
+            "fed": ["f", "ed"],
+            "ted": ["t", "ed"],
+            "bread": ["b", "r", "e", "a", "d"],
+        }, {word: self._strings(token_list) for word, token_list in merged.items()})
+
+    def test_merge_map_does_not_modify_input(self):
+        word_to_token_list = {
+            "fed": self._token_list(["f", "e", "d"]),
+            "ted": self._token_list(["t", "e", "d"]),
+        }
+        original_fed_tokens = word_to_token_list["fed"]
+        merge_rule = MergeRule((Token("e"), Token("d")), Token("ed"))
+        merged = self.tokenizer.apply_merge_rule_to_token_map(word_to_token_list, merge_rule)
+        self.assertIsNot(word_to_token_list, merged)
+        self.assertIs(original_fed_tokens, word_to_token_list["fed"])
+        self.assertEqual({
+            "fed": ["f", "e", "d"],
+            "ted": ["t", "e", "d"],
+        }, {word: self._strings(token_list) for word, token_list in word_to_token_list.items()})
+
     def _token_list(self, token_strings: list[str]) -> TokenList:
         token_list = TokenList()
         for token_string in token_strings:
