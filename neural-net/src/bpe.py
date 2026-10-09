@@ -81,13 +81,20 @@ class TokenFreqSet:
         return "[" + ", ".join(f"{entry.token.token}: {entry.frequency}" for entry in self.sorted_by_frequency()) + "]"
 
 class BPETokenizer:
+    def __init__(self):
+        self.vocabulary = TokenFreqSet()
+        self.merge_rules : list[MergeRule] = []
+
+    # Split text into words and punctuation, in order and keeping repeats; whitespace is dropped
+    def split_into_words(self, text: str) -> list[str]:
+        return re.findall(r"\w+|[^\w\s]", text)
 
     # Prepare a table that maps each word to its count in the given text
     # text: string to count words from
     # returns a dictionary with words as keys and their counts as values
     def word_frequencies(self, text: str) -> dict[str, int]:
         word_counts = dict()
-        words = re.findall(r"\w+|[^\w\s]", text)
+        words = self.split_into_words(text)
         for word in words:
             current_count = word_counts.get(word, 0)
             word_counts[word] = current_count + 1
@@ -132,18 +139,27 @@ class BPETokenizer:
         return word_to_token_list
     
     # You must have already called train_bpe before using this method to tokenize text.
-    def tokenize(self, text: str) -> TokenFreqSet:
-        # apply the merge rules from previous call to train_bpe
-        return self.train_bpe(text)
+    # Splits text into words the same way training does, then applies the learned
+    # merge rules to each word in the order they were learned.
+    def tokenize(self, text: str) -> TokenList:
+        result = TokenList()
+        for word in self.split_into_words(text):
+            word_tokens = TokenList()
+            for char in word:
+                word_tokens.add(Token(char))
+            for merge_rule in self.merge_rules:
+                word_tokens = self.apply_merge_rule_to_token_list(word_tokens, merge_rule)
+            for token in word_tokens.entries:
+                result.add(token)
+        return result
         
     # Train the BPE tokenizer by repeatedly merging the most frequent pairs of characters in the input text.
     # Keep merging the most frequent pairs until reaching the maximum number of merges or no more merges are possible.
-    # word_freqs: dictionary with words as keys and their counts as values
-    # max_merges: maximum number of merges to perform
-    # returns a set of tokens (vocabulary) after applying BPE merges
+    # returns a set of token frequencies (vocabulary) after applying BPE merges
     def train_bpe(self, corpus: str, max_merges: int = 1000) -> TokenFreqSet:
         print(f"Into train_bpe with corpus of length {len(corpus)}")
         
+        self.merge_rules = []
         word_freqs = self.word_frequencies(corpus)
         
         # Convert each word into a list of Token objects and store them in tokens_per_word dictionary
@@ -177,12 +193,15 @@ class BPETokenizer:
             merge_rule = MergeRule(most_freq_token_pair, Token(''.join([token.token for token in most_freq_token_pair])))
             word_to_token_list = self.apply_merge_rule_to_token_map(word_to_token_list, merge_rule)
             
+            self.merge_rules.append(merge_rule)
+            
             vocabulary.add(TokenFreq(merge_rule.merged, token_pair_frequencies[most_freq_token_pair]))
             
             print(f"Merged vocabulary: {vocabulary}")
             
-        print("--- END STATE VOCABULARY ---")
-        print(f"Final vocabulary: {vocabulary}")
+        print(f"FINAL VOCABULARY: {vocabulary}")
+        
+        self.vocabulary = vocabulary
         return vocabulary
       
         

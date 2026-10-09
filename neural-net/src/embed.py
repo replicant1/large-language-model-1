@@ -308,6 +308,7 @@ def train_skip_gram(opts: TrainingOptions) -> tuple[InitResult, EpochResult, Tra
     # Every word is paired with every other word within the window centered on itself.
     pairs: list[tuple[int, int]] = []
     tokenizer = BPETokenizer()
+    token_freq_set =tokenizer.train_bpe(" ".join(CORPUS).to_lower(), 500)
     for sentence in CORPUS:
         tokenizer.tokenize(sentence)
     return (None, None, None)
