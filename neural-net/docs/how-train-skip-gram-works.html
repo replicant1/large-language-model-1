@@ -1,0 +1,1113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Skip-gram Training Works</title>
+<meta name="description" content="An illustrated walkthrough of train_skip_gram in neural-net/src/embed.py: training pairs, scores, loss, how embeddings are refined, and the role of randomness.">
+<style>
+:root {
+  --bg: #fbfaf7;
+  --surface: #ffffff;
+  --surface-2: #f3f1ec;
+  --ink: #1d1f23;
+  --muted: #5d6470;
+  --line: #e3e0d8;
+  --accent: #2f5fd0;
+  --accent-soft: #e6ecfb;
+  --pos: #1f8a5b;
+  --pos-soft: #e2f3ea;
+  --neg: #c8462c;
+  --neg-soft: #fbe8e3;
+  --gold: #a87508;
+  --violet: #7a4fc4;
+  --code-bg: #f3f1ec;
+  --s1: #2f5fd0; --s2: #c8462c; --s3: #1f8a5b; --s4: #a87508; --s5: #7a4fc4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171b; --surface: #1d2026; --surface-2: #252930; --ink: #e8e6e1; --muted: #a0a6b0; --line: #343840;
+    --accent: #7fa2ff; --accent-soft: #232c45; --pos: #4cc38a; --pos-soft: #1b3229; --neg: #ff7a5c; --neg-soft: #3a231d;
+    --gold: #e3b341; --violet: #b392f0; --code-bg: #252930;
+    --s1: #7fa2ff; --s2: #ff7a5c; --s3: #4cc38a; --s4: #e3b341; --s5: #b392f0;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171b; --surface: #1d2026; --surface-2: #252930; --ink: #e8e6e1; --muted: #a0a6b0; --line: #343840;
+  --accent: #7fa2ff; --accent-soft: #232c45; --pos: #4cc38a; --pos-soft: #1b3229; --neg: #ff7a5c; --neg-soft: #3a231d;
+  --gold: #e3b341; --violet: #b392f0; --code-bg: #252930;
+  --s1: #7fa2ff; --s2: #ff7a5c; --s3: #4cc38a; --s4: #e3b341; --s5: #b392f0;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 17px/1.65 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+main { max-width: 800px; margin: 0 auto; padding: 40px 16px 96px; }
+h1 { font-size: 2.1rem; line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.02em; }
+h2 { font-size: 1.45rem; line-height: 1.3; margin: 64px 0 12px; letter-spacing: -0.01em; padding-top: 16px; border-top: 1px solid var(--line); }
+h3 { font-size: 1.1rem; margin: 32px 0 8px; }
+p, li { max-width: 68ch; }
+a { color: var(--accent); }
+.lede { font-size: 1.12rem; color: var(--muted); margin: 0 0 24px; }
+.num { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.86em; }
+:not(pre) > code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--code-bg); padding: 14px 16px; border-radius: 8px; overflow-x: auto; line-height: 1.5; margin: 16px 0; }
+pre .c { color: var(--muted); }
+pre .k { color: var(--violet); }
+pre .hl { background: var(--accent-soft); display: inline-block; width: 100%; }
+figure { margin: 24px 0; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+figure svg { display: block; width: 100%; height: auto; }
+figcaption { font-size: 0.9rem; color: var(--muted); margin-top: 10px; }
+.callout { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 20px 0; }
+.callout.pos { border-color: var(--pos); background: var(--pos-soft); }
+.callout.neg { border-color: var(--neg); background: var(--neg-soft); }
+.callout p { margin: 6px 0; }
+.toc { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 20px; margin: 24px 0; }
+.toc ol { margin: 6px 0; padding-left: 20px; columns: 2; column-gap: 32px; }
+.toc li { margin: 2px 0; break-inside: avoid; }
+@media (max-width: 560px) { .toc ol { columns: 1; } }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; margin: 12px 0; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; }
+td.r, th.r { text-align: right; }
+.table-wrap { overflow-x: auto; }
+.tokens { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.tok { display: inline-flex; flex-direction: column; align-items: center; border: 1px solid var(--line); background: var(--surface-2); border-radius: 6px; padding: 4px 10px; min-width: 44px; }
+.tok b { font-weight: 600; font-family: ui-monospace, Menlo, monospace; }
+.tok span { font-size: 0.75rem; color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+.grid-panels { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+@media (max-width: 560px) { .grid-panels { grid-template-columns: 1fr; } }
+.panel { border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--bg); }
+.panel h4 { margin: 0 0 2px; font-size: 0.85rem; }
+.panel .sub { font-size: 0.75rem; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.85rem; color: var(--muted); margin-top: 8px; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.play { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.play label { font-size: 0.9rem; color: var(--muted); }
+.play input[type=range] { width: 100%; accent-color: var(--accent); }
+.readout { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+@media (max-width: 560px) { .readout { grid-template-columns: repeat(2, 1fr); } }
+.readout div { background: var(--surface-2); border-radius: 6px; padding: 8px 10px; }
+.readout small { display: block; color: var(--muted); font-size: 0.75rem; }
+.readout b { font-family: ui-monospace, Menlo, monospace; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.ok { color: var(--pos); font-weight: 600; }
+.bad { color: var(--neg); font-weight: 600; }
+/* SVG theming */
+svg text { fill: var(--ink); font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
+svg .muted { fill: var(--muted); }
+svg .mono { font-family: ui-monospace, Menlo, monospace; }
+svg .box { fill: var(--surface-2); stroke: var(--line); }
+svg .box-accent { fill: var(--accent-soft); stroke: var(--accent); }
+svg .box-pos { fill: var(--pos-soft); stroke: var(--pos); }
+svg .box-neg { fill: var(--neg-soft); stroke: var(--neg); }
+svg .stroke { stroke: var(--ink); fill: none; }
+svg .stroke-muted { stroke: var(--muted); fill: none; }
+svg .grid { stroke: var(--line); }
+svg .accent { fill: var(--accent); }
+svg .accent-stroke { stroke: var(--accent); fill: none; }
+svg .pos { fill: var(--pos); }
+svg .pos-stroke { stroke: var(--pos); fill: none; }
+svg .neg { fill: var(--neg); }
+svg .neg-stroke { stroke: var(--neg); fill: none; }
+.theme-toggle { position: fixed; top: 12px; right: 12px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 0.85rem; cursor: pointer; }
+.where { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin: 4px 0 18px; }
+.where-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-right: 2px; }
+a.src { display: inline-flex; align-items: baseline; gap: 6px; text-decoration: none; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 2px 10px; font-size: 0.8rem; color: var(--ink); white-space: nowrap; }
+a.src:hover { border-color: var(--accent); background: var(--accent-soft); }
+a.src .src-name { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--accent); }
+a.src .src-loc { color: var(--muted); font-size: 0.75rem; }
+a.src::after { content: "↗"; color: var(--muted); font-size: 0.75rem; }
+a.code-link { text-decoration: none; }
+a.code-link code { color: var(--accent); border-bottom: 1px dotted var(--accent); }
+a.code-link:hover code { background: var(--accent-soft); }
+.pre-src { margin: -10px 0 16px; text-align: right; }
+pre a.line-link { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
+pre a.line-link:hover { background: var(--accent-soft); }
+svg a:hover rect { stroke: var(--accent); stroke-width: 2; }
+svg a { cursor: pointer; }
+</style>
+</head>
+<body>
+<button class="theme-toggle" id="themeToggle" type="button">Theme</button>
+<main>
+
+<h1>How <code>train_skip_gram</code> works</h1>
+<p class="lede">An illustrated guide to the skip-gram training code in <code>neural-net/src/embed.py</code>: what it does step by step, what "loss" means, how the embeddings get better over time, and where randomness comes in. Every number and chart below comes from running your code on your corpus.</p>
+<div class="callout"><p><strong>Links to the code.</strong> Each section starts with an <em>In the code</em> strip like the one below. Function names in the text, boxes in the flow diagram, and the numbered comments in code blocks are links too. Each opens <code>embed.py</code> or <code>bpe.py</code> on GitHub with the relevant lines highlighted. The links are pinned to commit <a href="https://github.com/replicant1/large-language-model-1/tree/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src" target="_blank" rel="noopener"><code>2cd863f</code></a>, so the line numbers stay correct even after the code changes.</p></div>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L630-L761" target="_blank" rel="noopener"><span class="src-name">train_skip_gram</span><span class="src-loc">embed.py lines 630–761</span></a></div>
+
+<nav class="toc">
+<strong>Contents</strong>
+<ol>
+<li><a href="#idea">The big idea</a></li>
+<li><a href="#overview">The whole function at a glance</a></li>
+<li><a href="#tokens">Step 1: Text to numbers</a></li>
+<li><a href="#pairs">Step 2: Training pairs</a></li>
+<li><a href="#weights">Step 3: Two tables of vectors</a></li>
+<li><a href="#score">Step 4: Scoring a pair</a></li>
+<li><a href="#negatives">Step 5: Negative samples</a></li>
+<li><a href="#nudge">Step 6: The nudge (<code>train_pair</code>)</a></li>
+<li><a href="#loss">What is "loss"?</a></li>
+<li><a href="#epochs">Epochs and the learning rate</a></li>
+<li><a href="#refine">How embeddings are refined</a></li>
+<li><a href="#random">The role of randomness</a></li>
+<li><a href="#results">After training: the results</a></li>
+<li><a href="#glossary">Glossary</a></li>
+</ol>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="idea">1. The big idea</h2>
+
+<p>An <strong>embedding</strong> is a list of numbers (a vector) that stands for a token. In your runs each token gets 32 numbers. On their own the numbers mean nothing, but they are arranged so that <em>tokens used in similar ways end up with vectors pointing in similar directions</em>.</p>
+
+<p>Skip-gram learns those vectors from one simple observation, often summed up as <em>"you shall know a word by the company it keeps"</em>:</p>
+
+<figure>
+<svg viewBox="0 0 720 200" role="img" aria-label="king and queen appear in similar contexts, so they get similar vectors">
+  <text x="20" y="30" font-size="14" class="muted">Sentences in your corpus…</text>
+  <rect x="20" y="44" width="300" height="34" rx="6" class="box"/>
+  <text x="34" y="66" font-size="15" class="mono">the <tspan font-weight="700" fill="var(--accent)">king</tspan> sits on the throne</text>
+  <rect x="20" y="88" width="300" height="34" rx="6" class="box"/>
+  <text x="34" y="110" font-size="15" class="mono">the <tspan font-weight="700" fill="var(--accent)">queen</tspan> sits on the throne</text>
+  <rect x="20" y="132" width="300" height="34" rx="6" class="box"/>
+  <text x="34" y="154" font-size="15" class="mono">i ate <tspan font-weight="700" fill="var(--neg)">pizza</tspan> for dinner</text>
+  <path d="M335 100 L395 100" class="stroke" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="410" y="30" font-size="14" class="muted">…become vectors (shown in 2-D)</text>
+  <g transform="translate(540,120)">
+    <circle r="3" class="accent" />
+    <line x1="0" y1="0" x2="120" y2="-70" stroke="var(--accent)" stroke-width="3" marker-end="url(#arrA)"/>
+    <line x1="0" y1="0" x2="128" y2="-50" stroke="var(--accent)" stroke-width="3" marker-end="url(#arrA)"/>
+    <line x1="0" y1="0" x2="-90" y2="55" stroke="var(--neg)" stroke-width="3" marker-end="url(#arrN)"/>
+    <text x="104" y="-78" font-size="14" font-weight="600">king</text>
+    <text x="134" y="-44" font-size="14" font-weight="600">queen</text>
+    <text x="-130" y="72" font-size="14" font-weight="600">pizza</text>
+  </g>
+  <text x="410" y="190" font-size="13" class="muted">Similar company → similar direction</text>
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--ink)"/></marker>
+    <marker id="arrA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+    <marker id="arrN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--neg)"/></marker>
+    <marker id="arrP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--pos)"/></marker>
+    <marker id="arrM" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker>
+  </defs>
+</svg>
+<figcaption>"king" and "queen" keep the same company ("the … sits on the throne"), so training pushes their vectors in the same direction. "pizza" keeps different company and ends up pointing elsewhere.</figcaption>
+</figure>
+
+<p>The model never sees a definition of any word. It only plays a guessing game, millions of times over: <em>"Here are two tokens. Did they really appear near each other in the text, or is this a random pairing?"</em> To get good at that game it has to place tokens with similar neighbours close together. The vectors that result are the embeddings.</p>
+
+<!-- ============================================================ -->
+<h2 id="overview">2. The whole function at a glance</h2>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L632-L761" target="_blank" rel="noopener"><span class="src-name">train_skip_gram</span><span class="src-loc">embed.py lines 632–761</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L235-L240" target="_blank" rel="noopener"><span class="src-name">TrainingOptions</span><span class="src-loc">embed.py lines 235–240</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L243-L288" target="_blank" rel="noopener"><span class="src-name">InitResult / EpochResult / TrainEmbedResult</span><span class="src-loc">embed.py lines 243–288</span></a></div>
+
+<p><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L632-L761" target="_blank" rel="noopener"><code>train_skip_gram</code></a> is a <em>generator</em>: it <code>yield</code>s results as it goes, which is why a caller sees three kinds of result. Here is the flow, with the helper method that does each step:</p>
+
+<figure>
+<svg viewBox="0 0 720 560" role="img" aria-label="Flow diagram of train_skip_gram">
+  <g font-size="13">
+    <!-- setup -->
+    <a href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L643-L644" target="_blank" rel="noopener"><rect x="20" y="16" width="330" height="54" rx="8" class="box"/>
+    <text x="34" y="38" font-weight="600">Encode each sentence as token indices</text>
+    <text x="34" y="58" class="muted mono" font-size="12">tokenize() + vocabulary.encode()</text></a>
+    <a href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L367-L385" target="_blank" rel="noopener"><rect x="20" y="86" width="330" height="54" rx="8" class="box"/>
+    <text x="34" y="108" font-weight="600">Pair up nearby tokens</text>
+    <text x="34" y="128" class="muted mono" font-size="12">build_training_pairs()</text></a>
+    <a href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L648-L654" target="_blank" rel="noopener"><rect x="370" y="86" width="330" height="54" rx="8" class="box-accent"/>
+    <text x="384" y="108" font-weight="600">yield InitResult</text>
+    <text x="384" y="128" class="muted" font-size="12">vocab size, sentence count, pair count…</text></a>
+    <a href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L387-L439" target="_blank" rel="noopener"><rect x="20" y="156" width="330" height="54" rx="8" class="box"/>
+    <text x="34" y="178" font-weight="600">Build negative-sampling table</text>
+    <text x="34" y="198" class="muted mono" font-size="12">build_negative_sampling_table()</text></a>
+    <a href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L465-L494" target="_blank" rel="noopener"><rect x="20" y="226" width="330" height="54" rx="8" class="box"/>
+    <text x="34" y="248" font-weight="600">Random starting vectors: w_in, w_out</text>
+    <text x="34" y="268" class="muted mono" font-size="12">init_weights()   🎲</text></a>
+    <path d="M185 70 v14 M185 140 v14 M185 210 v14 M185 280 v20" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/>
+    <path d="M350 113 h18" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/>
+    <!-- loop -->
+    <rect x="10" y="302" width="700" height="176" rx="12" fill="none" stroke="var(--accent)" stroke-dasharray="5 4"/>
+    <a href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L669-L674" target="_blank" rel="noopener"><text x="24" y="324" font-weight="700" fill="var(--accent)" text-decoration="underline">for epoch in range(epochs + 1):</text></a>
+    <a href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L512-L522" target="_blank" rel="noopener"><rect x="30" y="336" width="220" height="50" rx="8" class="box"/>
+    <text x="42" y="357" font-weight="600">Pick learning rate</text>
+    <text x="42" y="376" class="muted mono" font-size="12">learning_rate()</text></a>
+    <a href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L496-L510" target="_blank" rel="noopener"><rect x="270" y="336" width="200" height="50" rx="8" class="box"/>
+    <text x="282" y="357" font-weight="600">Shuffle the pairs</text>
+    <text x="282" y="376" class="muted mono" font-size="12">shuffle()   🎲</text></a>
+    <path d="M250 361 h18" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/>
+    <a href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L564-L588" target="_blank" rel="noopener"><rect x="30" y="400" width="440" height="64" rx="8" class="box"/>
+    <text x="42" y="420" font-weight="600">For every pair (target, context):</text>
+    <text x="42" y="438" font-size="12"><tspan fill="var(--pos)" font-weight="600">1 positive</tspan> nudge: pull together</text>
+    <text x="42" y="455" font-size="12"><tspan fill="var(--neg)" font-weight="600">5 negative</tspan> nudges: push apart from random tokens 🎲</text>
+    <text x="330" y="438" class="muted mono" font-size="12">train_epoch()</text>
+    <text x="330" y="455" class="muted mono" font-size="12">train_pair()</text></a>
+    <path d="M370 386 v12" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/>
+    <a href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L673-L674" target="_blank" rel="noopener"><rect x="490" y="400" width="205" height="64" rx="8" class="box-accent"/>
+    <text x="502" y="422" font-weight="600">yield EpochResult</text>
+    <text x="502" y="441" class="muted" font-size="12">average loss, every</text>
+    <text x="502" y="456" class="muted" font-size="12"><tspan class="mono">epochs // 50</tspan> epochs</text></a>
+    <path d="M470 432 h18" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/>
+    <!-- after -->
+    <path d="M185 478 v18" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/>
+    <a href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L676-L753" target="_blank" rel="noopener"><rect x="20" y="498" width="330" height="54" rx="8" class="box"/>
+    <text x="34" y="520" font-weight="600">Neighbours, similarities, analogies</text>
+    <text x="34" y="540" class="muted" font-size="12">+ save model to .data/embedding-weights.json</text></a>
+    <a href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L755-L761" target="_blank" rel="noopener"><rect x="370" y="498" width="330" height="54" rx="8" class="box-accent"/>
+    <text x="384" y="520" font-weight="600">yield TrainEmbedResult</text>
+    <text x="384" y="540" class="muted" font-size="12">the final report</text></a>
+    <path d="M350 525 h18" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/>
+  </g>
+</svg>
+<figcaption>Click any box to open its code. The 🎲 marks every place a random number is drawn. All of them come from one seeded generator, which is covered in <a href="#random">section 12</a>.</figcaption>
+</figure>
+
+<p>The heart of it is the loop: go through every training pair, nudge some vectors a tiny amount, repeat the whole thing for many epochs. Everything else is setup and reporting.</p>
+
+<!-- ============================================================ -->
+<h2 id="tokens">3. Step 1: Text to numbers</h2>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L643-L644" target="_blank" rel="noopener"><span class="src-name">encode the corpus</span><span class="src-loc">embed.py lines 643–644</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L26-L149" target="_blank" rel="noopener"><span class="src-name">CORPUS</span><span class="src-loc">embed.py lines 26–149</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L341-L342" target="_blank" rel="noopener"><span class="src-name">Embed.tokenize</span><span class="src-loc">embed.py lines 341–342</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/bpe.py#L228-L236" target="_blank" rel="noopener"><span class="src-name">BPETokenizer.tokenize</span><span class="src-loc">bpe.py lines 228–236</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/bpe.py#L213-L226" target="_blank" rel="noopener"><span class="src-name">split_word</span><span class="src-loc">bpe.py lines 213–226</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/bpe.py#L97-L113" target="_blank" rel="noopener"><span class="src-name">Vocabulary (sorted by frequency)</span><span class="src-loc">bpe.py lines 97–113</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/bpe.py#L132-L135" target="_blank" rel="noopener"><span class="src-name">Vocabulary.encode</span><span class="src-loc">bpe.py lines 132–135</span></a></div>
+
+<p>The code can't work with words directly, so first each sentence of <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L26-L149" target="_blank" rel="noopener"><code>CORPUS</code></a> is split into BPE tokens and each token is replaced by its <strong>index</strong> in the vocabulary. The vocabulary is sorted by frequency, so index 0 is the most common token. Here are real examples from your corpus:</p>
+
+<figure>
+<div id="tokenExamples"></div>
+<figcaption>Top line: the BPE token. Bottom line: its vocabulary index. Note that <code>mat</code> isn't in the vocabulary, so it splits into <code>m</code> + <code>at</code> (<a href="#mat-vs-cat">why?</a>). Whole words that are common enough, like <code>princess</code>, are single tokens.</figcaption>
+</figure>
+
+<pre><span class="c"># train_skip_gram</span>
+sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span class="k">self</span>.tokenize(sentence)) <span class="k">for</span> sentence <span class="k">in</span> CORPUS]</pre>
+<div class="pre-src"><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L644" target="_blank" rel="noopener"><span class="src-name">train_skip_gram</span><span class="src-loc">embed.py line 644</span></a></div>
+
+<p>Your corpus has <strong class="num">107</strong> sentences and the vocabulary has <strong class="num">286</strong> tokens. From here on, the code only ever deals with indices: lists of whole numbers from 0 to 285.</p>
+
+<h3 id="mat-vs-cat">Why is "mat" split, but "cat" isn't?</h3>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/bpe.py#L261-L282" target="_blank" rel="noopener"><span class="src-name">train_bpe merge loop</span><span class="src-loc">bpe.py lines 261–282</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/bpe.py#L271-L272" target="_blank" rel="noopener"><span class="src-name">stop if best pair occurs &lt; 2 times</span><span class="src-loc">bpe.py lines 271–272</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/bpe.py#L224-L225" target="_blank" rel="noopener"><span class="src-name">merges applied in learned order</span><span class="src-loc">bpe.py lines 224–225</span></a></div>
+
+<p>It comes down to how often each word appears in the text the tokenizer learned from. <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/bpe.py#L241-L287" target="_blank" rel="noopener"><code>train_bpe</code></a> starts with every word split into single letters. Then, step by step, it finds the most frequent pair of neighbouring tokens in the whole corpus and merges that pair into a new token. Pairs that occur often get merged; rare ones don't.</p>
+
+<figure>
+<svg viewBox="0 0 720 180" role="img" aria-label="cat is merged into one token, mat stays as m plus at"><text x="20" y="28" font-weight="700" font-size="14">cat</text><text x="56" y="28" class="muted" font-size="13">(11 times in CORPUS, plus "cats" twice)</text><rect x="20" y="40" width="29" height="30" rx="6" class="box"/><text x="34.5" y="60" text-anchor="middle" font-size="15" class="mono" font-weight="600">c</text><rect x="55" y="40" width="29" height="30" rx="6" class="box"/><text x="69.5" y="60" text-anchor="middle" font-size="15" class="mono" font-weight="600">a</text><rect x="90" y="40" width="29" height="30" rx="6" class="box"/><text x="104.5" y="60" text-anchor="middle" font-size="15" class="mono" font-weight="600">t</text><text x="133" y="60" class="muted" font-size="13">→ #6 a+t →</text><rect x="225" y="40" width="29" height="30" rx="6" class="box"/><text x="239.5" y="60" text-anchor="middle" font-size="15" class="mono" font-weight="600">c</text><rect x="260" y="40" width="40" height="30" rx="6" class="box-accent"/><text x="280.0" y="60" text-anchor="middle" font-size="15" class="mono" font-weight="600">at</text><text x="314" y="60" class="muted" font-size="13">→ #18 c+at →</text><rect x="418" y="40" width="51" height="30" rx="6" class="box-pos"/><text x="443.5" y="60" text-anchor="middle" font-size="15" class="mono" font-weight="600">cat</text><text x="483" y="60" font-size="13" fill="var(--pos)" font-weight="600">one token</text><text x="20" y="118" font-weight="700" font-size="14">mat</text><text x="58" y="118" class="muted" font-size="13">(once in CORPUS)</text><rect x="20" y="130" width="29" height="30" rx="6" class="box"/><text x="34.5" y="150" text-anchor="middle" font-size="15" class="mono" font-weight="600">m</text><rect x="55" y="130" width="29" height="30" rx="6" class="box"/><text x="69.5" y="150" text-anchor="middle" font-size="15" class="mono" font-weight="600">a</text><rect x="90" y="130" width="29" height="30" rx="6" class="box"/><text x="104.5" y="150" text-anchor="middle" font-size="15" class="mono" font-weight="600">t</text><text x="133" y="150" class="muted" font-size="13">→ #6 a+t →</text><rect x="225" y="130" width="29" height="30" rx="6" class="box-neg"/><text x="239.5" y="150" text-anchor="middle" font-size="15" class="mono" font-weight="600">m</text><rect x="260" y="130" width="40" height="30" rx="6" class="box-neg"/><text x="280.0" y="150" text-anchor="middle" font-size="15" class="mono" font-weight="600">at</text><text x="316" y="144" font-size="13" fill="var(--neg)" font-weight="600">m+at occurs only once, so</text><text x="316" y="161" font-size="13" fill="var(--neg)" font-weight="600">train_bpe stops here: two tokens</text></svg>
+<figcaption>The merge numbers are the order in which <code>train_bpe</code> learned each merge. "cat" is common enough for both merges; "mat" only gets the first one.</figcaption>
+</figure>
+
+<table>
+<thead><tr><th>Merge</th><th>Pair</th><th class="r">Times the pair occurred when merged</th></tr></thead>
+<tbody>
+<tr><td class="num">#6</td><td><code>a</code> + <code>t</code> → <code>at</code></td><td class="r num">29 <span style="color:var(--muted)">(cat, sat, at, mat, cats, …)</span></td></tr>
+<tr><td class="num">#18</td><td><code>c</code> + <code>at</code> → <code>cat</code></td><td class="r num">13 <span style="color:var(--muted)">(cat × 11, cats × 2)</span></td></tr>
+<tr><td class="num">never</td><td><code>m</code> + <code>at</code> → <code>mat</code></td><td class="r num">1 <span style="color:var(--muted)">(mat × 1)</span></td></tr>
+</tbody>
+</table>
+
+<p><strong>The stopping rule.</strong> <code>train_bpe</code> stops as soon as the most frequent remaining pair occurs fewer than 2 times, because merging a pair that appears only once doesn't help compress the text. That rule is what ended training on your corpus: after 261 merges (out of the 500 allowed), the most frequent pair left was <code>m</code> + <code>at</code>, with a count of 1. "mat" is literally the last word left unmerged.</p>
+
+<p><strong>A subtlety.</strong> The tokenizer did learn <code>m</code> + <code>a</code> → <code>ma</code> (merge #132, from words like "man" and "woman"). Yet "mat" still comes out as <code>m</code> + <code>at</code>, not <code>ma</code> + <code>t</code>. That's because <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/bpe.py#L220-L226" target="_blank" rel="noopener"><code>split_word</code></a> applies the merges in the order they were learned. <code>a</code> + <code>t</code> (#6) runs long before <code>m</code> + <code>a</code> (#132), so by the time <code>ma</code> could apply, the <code>a</code> is already part of <code>at</code>.</p>
+
+<div class="callout"><p><strong>Why it matters here:</strong> "mat" has no embedding of its own. Training sees <code>m</code> and <code>at</code> as two separate tokens, and the <code>at</code> vector is shared with the word "at" and with every other word split around it. It's also why <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L614-L628" target="_blank" rel="noopener"><code>find_query_indices</code></a> warns about query words like this.</p></div>
+
+
+<!-- ============================================================ -->
+<h2 id="pairs">4. Step 2: Training pairs</h2>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L367-L385" target="_blank" rel="noopener"><span class="src-name">build_training_pairs</span><span class="src-loc">embed.py lines 367–385</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L382-L384" target="_blank" rel="noopener"><span class="src-name">the window loop</span><span class="src-loc">embed.py lines 382–384</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L645" target="_blank" rel="noopener"><span class="src-name">called from train_skip_gram</span><span class="src-loc">embed.py line 645</span></a></div>
+
+<p><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L367-L385" target="_blank" rel="noopener"><code>build_training_pairs</code></a> slides a <strong>window</strong> over each sentence. Each token in turn is the <em>target</em>, and every token within <code>window_size</code> positions of it is a <em>context</em>. Each (target, context) combination becomes one training pair: a piece of evidence that these two tokens keep each other's company.</p>
+
+<figure>
+<svg id="windowSvg" viewBox="0 0 720 210" role="img" aria-label="Sliding window over the sentence the cat sat on the mat"></svg>
+<div class="play" style="margin-top:8px">
+  <label for="windowPos">Move the target along the sentence (window_size = 2):</label>
+  <input type="range" id="windowPos" min="0" max="6" value="2">
+</div>
+<figcaption>With <code>window_size = 2</code>, the target <span id="windowTarget"></span> pairs with up to two tokens on each side. The window never crosses into the next sentence.</figcaption>
+</figure>
+
+<p>Doing that for every position in "the cat sat on the mat" gives 22 pairs:</p>
+<div class="table-wrap"><div id="pairList" class="tokens"></div></div>
+
+<p>Across the whole corpus the number of pairs depends on the window size:</p>
+<table>
+<thead><tr><th>window_size</th><th class="r">training pairs</th></tr></thead>
+<tbody>
+<tr><td>1</td><td class="r num">1,370</td></tr>
+<tr><td>2 (your runs)</td><td class="r num"><strong>2,526</strong></td></tr>
+<tr><td>3</td><td class="r num">3,468</td></tr>
+</tbody>
+</table>
+
+<p>That list of 2,526 pairs <em>is</em> the training data. The original sentences are no longer needed.</p>
+
+<!-- ============================================================ -->
+<h2 id="weights">5. Step 3: Two tables of vectors</h2>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L465-L494" target="_blank" rel="noopener"><span class="src-name">init_weights</span><span class="src-loc">embed.py lines 465–494</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L483" target="_blank" rel="noopener"><span class="src-name">scale = 0.5 / dim</span><span class="src-loc">embed.py line 483</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L490-L491" target="_blank" rel="noopener"><span class="src-name">random values, alternating w_in / w_out</span><span class="src-loc">embed.py lines 490–491</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L657" target="_blank" rel="noopener"><span class="src-name">called from train_skip_gram</span><span class="src-loc">embed.py line 657</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L291-L331" target="_blank" rel="noopener"><span class="src-name">EmbeddingVector</span><span class="src-loc">embed.py lines 291–331</span></a></div>
+
+<p><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L465-L494" target="_blank" rel="noopener"><code>init_weights</code></a> creates two tables, each with one row per token (286 rows) and one column per dimension (32 columns):</p>
+
+<figure>
+<svg viewBox="0 0 720 270" role="img" aria-label="The two weight tables w_in and w_out">
+  <g font-size="13">
+    <text x="20" y="22" font-weight="700">w_in</text><text x="62" y="22" class="muted">(target vectors: these become the embeddings)</text>
+    <text x="380" y="22" font-weight="700">w_out</text><text x="428" y="22" class="muted">(context vectors: helpers)</text>
+    <g id="matIn" transform="translate(70,36)"></g>
+    <g id="matOut" transform="translate(430,36)"></g>
+  </g>
+</svg>
+<figcaption>Every row is one token's <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L291-L331" target="_blank" rel="noopener"><code>EmbeddingVector</code></a>. A token has <em>two</em> vectors: one used when it's the target (<a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_in</code></a>) and one used when it's the context (<a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_out</code></a>). Only <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_in</code></a> is kept as the embedding at the end. The colours illustrate the kind of starting values: small random numbers, some positive (blue) and some negative (red).</figcaption>
+</figure>
+
+<p>Why two tables? It keeps the maths simple. "king as a target" and "king as someone else's context" play different roles in the guessing game, so each gets its own vector. Many implementations do the same and throw <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_out</code></a> away at the end.</p>
+
+<p>The starting values are small random numbers between <span class="num">−scale/2</span> and <span class="num">+scale/2</span>, where <span class="num">scale = 0.5 / 32 = 0.015625</span>. Here are the first six of king's 32 starting values (seed 42):</p>
+<pre>w_in[king] = [-0.00352, 0.00276, 0.00497, -0.00729, -0.00632, 0.00568, …]</pre>
+<p>Right now they mean nothing; they're just noise. <a href="#random">Section 12</a> explains why they have to be random rather than all zero.</p>
+
+<!-- ============================================================ -->
+<h2 id="score">6. Step 4: Scoring a pair</h2>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L309-L318" target="_blank" rel="noopener"><span class="src-name">EmbeddingVector.dot</span><span class="src-loc">embed.py lines 309–318</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L358-L365" target="_blank" rel="noopener"><span class="src-name">sigmoid</span><span class="src-loc">embed.py lines 358–365</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L361-L364" target="_blank" rel="noopener"><span class="src-name">the ±6 shortcut</span><span class="src-loc">embed.py lines 361–364</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L553" target="_blank" rel="noopener"><span class="src-name">score in train_pair</span><span class="src-loc">embed.py line 553</span></a></div>
+
+<p>For a pair (target, other), the model needs a guess: <em>how likely is it that these two really appeared together?</em> It works that out in two steps.</p>
+
+<h3>a) The dot product: do the vectors agree?</h3>
+<p>Multiply the two vectors element by element and add up the results. This is <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L309-L318" target="_blank" rel="noopener"><code>EmbeddingVector.dot</code></a>:</p>
+<pre>dot = t[0]×o[0] + t[1]×o[1] + … + t[31]×o[31]</pre>
+<div class="pre-src"><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L314-L318" target="_blank" rel="noopener"><span class="src-name">EmbeddingVector.dot</span><span class="src-loc">embed.py lines 314–318</span></a></div>
+
+<figure>
+<svg viewBox="0 0 720 190" role="img" aria-label="Dot product is large when vectors point the same way, zero when perpendicular, negative when opposite">
+  <g font-size="13">
+    <g transform="translate(120,120)">
+      <line x1="0" y1="0" x2="90" y2="-60" stroke="var(--accent)" stroke-width="3" marker-end="url(#arrA)"/>
+      <line x1="0" y1="0" x2="100" y2="-36" stroke="var(--pos)" stroke-width="3" marker-end="url(#arrP)"/>
+      <text x="-60" y="50" font-weight="600">Same direction</text>
+      <text x="-60" y="68" class="muted">dot is large and positive</text>
+    </g>
+    <g transform="translate(360,120)">
+      <line x1="0" y1="0" x2="100" y2="-20" stroke="var(--accent)" stroke-width="3" marker-end="url(#arrA)"/>
+      <line x1="0" y1="0" x2="-14" y2="-80" stroke="var(--muted)" stroke-width="3" marker-end="url(#arrM)"/>
+      <text x="-60" y="50" font-weight="600">At right angles</text>
+      <text x="-60" y="68" class="muted">dot ≈ 0: unrelated</text>
+    </g>
+    <g transform="translate(600,120)">
+      <line x1="0" y1="0" x2="80" y2="-40" stroke="var(--accent)" stroke-width="3" marker-end="url(#arrA)"/>
+      <line x1="0" y1="0" x2="-80" y2="34" stroke="var(--neg)" stroke-width="3" marker-end="url(#arrN)"/>
+      <text x="-80" y="50" font-weight="600">Opposite directions</text>
+      <text x="-80" y="68" class="muted">dot is negative</text>
+    </g>
+  </g>
+</svg>
+<figcaption>The dot product measures agreement. Longer vectors also give bigger dot products, which is why vectors grow during training (see <a href="#refine">section 11</a>).</figcaption>
+</figure>
+
+<h3>b) The sigmoid: turn agreement into a probability</h3>
+<p>A dot product can be any number. <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L358-L365" target="_blank" rel="noopener"><code>sigmoid</code></a> squashes it into the range 0 to 1, so it can be read as a probability:</p>
+<pre>score = sigmoid(dot) = 1 / (1 + e<sup>−dot</sup>)</pre>
+<div class="pre-src"><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L360-L365" target="_blank" rel="noopener"><span class="src-name">sigmoid</span><span class="src-loc">embed.py lines 360–365</span></a></div>
+
+<figure>
+<svg id="sigmoidSvg" viewBox="0 0 720 260" role="img" aria-label="The sigmoid curve"></svg>
+<figcaption>Big positive dot → score near 1 ("yes, these go together"). Big negative dot → score near 0 ("no"). A dot of 0 → score 0.5 ("no idea"). Your <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L358-L365" target="_blank" rel="noopener"><code>sigmoid</code></a> returns exactly 1 above 6 and exactly 0 below −6 to save time.</figcaption>
+</figure>
+
+<p>At the start every vector is tiny, so every dot product is about 0 and every score is about 0.5. The model starts out guessing "no idea" for everything.</p>
+
+<!-- ============================================================ -->
+<h2 id="negatives">7. Step 5: Negative samples</h2>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L581-L586" target="_blank" rel="noopener"><span class="src-name">negative loop in train_epoch</span><span class="src-loc">embed.py lines 581–586</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L584-L585" target="_blank" rel="noopener"><span class="src-name">skip if neg == context</span><span class="src-loc">embed.py lines 584–585</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L387-L439" target="_blank" rel="noopener"><span class="src-name">build_negative_sampling_table</span><span class="src-loc">embed.py lines 387–439</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L430" target="_blank" rel="noopener"><span class="src-name">frequency ** 0.75</span><span class="src-loc">embed.py line 430</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L436-L438" target="_blank" rel="noopener"><span class="src-name">running total</span><span class="src-loc">embed.py lines 436–438</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L441-L463" target="_blank" rel="noopener"><span class="src-name">sample_negative</span><span class="src-loc">embed.py lines 441–463</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L656" target="_blank" rel="noopener"><span class="src-name">table built in train_skip_gram</span><span class="src-loc">embed.py line 656</span></a></div>
+
+<p>If the model only ever saw real pairs and was told "yes" each time, it would find a lazy solution: make every vector huge and pointing the same way, so every score is 1. It would be 100% right and would have learned nothing.</p>
+
+<p>So for every real (positive) pair, <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L564-L588" target="_blank" rel="noopener"><code>train_epoch</code></a> also makes up <strong>5 fake pairs</strong> (<a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L582" target="_blank" rel="noopener"><code>negative_samples = 5</code></a>): the same target, paired with tokens picked at random. For those the right answer is "no".</p>
+
+<figure>
+<svg viewBox="0 0 720 220" role="img" aria-label="One positive pair and five negative pairs">
+  <g font-size="14">
+    <rect x="20" y="86" width="110" height="44" rx="8" class="box-accent"/>
+    <text x="75" y="113" text-anchor="middle" font-weight="700" class="mono">king</text>
+    <text x="75" y="150" text-anchor="middle" class="muted" font-size="12">target</text>
+    <g id="negFan"></g>
+  </g>
+</svg>
+<figcaption>One real context (label 1, should score near 1) and five random tokens (label 0, should score near 0). A random token that happens to be the real context is skipped.</figcaption>
+</figure>
+
+<h3>Which random tokens? The negative-sampling table</h3>
+<p>Negatives aren't picked uniformly. <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L387-L439" target="_blank" rel="noopener"><code>build_negative_sampling_table</code></a> gives each token a probability based on its frequency raised to the power <span class="num">0.75</span> (a trick from the original word2vec paper). Common tokens are still picked more often, but the 0.75 flattens things out so rare tokens get more of a chance than their raw count would give them:</p>
+
+<figure>
+<svg id="negBars" viewBox="0 0 720 300" role="img" aria-label="Raw frequency share vs negative sampling probability"></svg>
+<div class="legend"><span><i style="background:var(--muted)"></i>raw share of the text</span><span><i style="background:var(--accent)"></i>chance of being picked as a negative</span></div>
+<figcaption>Real values from your vocabulary. The most common token, <code>e</code>, is 7.8% of the text but only 4.6% of negatives. <code>king</code> is 0.25% of the text but 0.35% of negatives.</figcaption>
+</figure>
+
+<p>To actually pick one, the table stores a running total. Each token owns a stretch of the line from 0 to 1 as wide as its probability. <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L441-L463" target="_blank" rel="noopener"><code>sample_negative</code></a> draws a random number <em>r</em> and finds whose stretch it lands in (using a binary search):</p>
+
+<figure>
+<svg viewBox="0 0 720 150" role="img" aria-label="Cumulative table as a number line">
+  <g font-size="13">
+    <rect x="40" y="50" width="529" height="40" class="box-accent"/>
+    <rect x="569" y="50" width="94" height="40" fill="var(--pos-soft)" stroke="var(--pos)"/>
+    <rect x="663" y="50" width="17" height="40" fill="var(--neg-soft)" stroke="var(--neg)"/>
+    <text x="304" y="75" text-anchor="middle" font-weight="600" class="mono">the  (0.827)</text>
+    <text x="616" y="75" text-anchor="middle" font-weight="600" class="mono">cat</text>
+    <text x="671" y="40" text-anchor="middle" font-weight="600" class="mono" font-size="12">mat</text>
+    <text x="40" y="108" text-anchor="middle" class="muted mono">0</text>
+    <text x="569" y="108" text-anchor="middle" class="muted mono">0.827</text>
+    <text x="640" y="125" text-anchor="middle" class="muted mono">0.974</text>
+    <text x="680" y="108" text-anchor="middle" class="muted mono">1</text>
+    <path d="M616 18 v28" class="neg-stroke" stroke-width="2" marker-end="url(#arrN)"/>
+    <text x="616" y="14" text-anchor="middle" fill="var(--neg)" font-weight="600">r = 0.90 → cat</text>
+    <path d="M360 18 v28" class="accent-stroke" stroke-width="2" marker-end="url(#arrA)"/>
+    <text x="360" y="14" text-anchor="middle" fill="var(--accent)" font-weight="600">r = 0.50 → the</text>
+  </g>
+</svg>
+<figcaption>A three-token example (the one in the code comments). Wider stretch = more likely to be hit by a random r.</figcaption>
+</figure>
+
+<!-- ============================================================ -->
+<h2 id="nudge">8. Step 6: The nudge (<code>train_pair</code>)</h2>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L524-L562" target="_blank" rel="noopener"><span class="src-name">train_pair</span><span class="src-loc">embed.py lines 524–562</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L320-L324" target="_blank" rel="noopener"><span class="src-name">EmbeddingVector.add_scaled</span><span class="src-loc">embed.py lines 320–324</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L326-L328" target="_blank" rel="noopener"><span class="src-name">EmbeddingVector.copy</span><span class="src-loc">embed.py lines 326–328</span></a></div>
+
+<p>This is where learning actually happens. <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L524-L562" target="_blank" rel="noopener"><code>train_pair</code></a> is called once for each positive pair and once for each negative, about 15,000 times per epoch. Here's the whole thing:</p>
+
+<pre><span class="k">def</span> train_pair(<span class="k">self</span>, w_in, w_out, target, other, label, lr):
+    target_vector = w_in[target]
+    other_vector = w_out[other]
+
+<span class="hl">    score = <span class="k">self</span>.sigmoid(target_vector.dot(other_vector))   <span class="c"><a class="line-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L553" target="_blank" rel="noopener"># 1. guess</a></span></span>
+<span class="hl">    grad = lr * (label - score)                            <span class="c"><a class="line-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L554" target="_blank" rel="noopener"># 2. how wrong?</a></span></span>
+
+    old_target_vector = target_vector.copy()
+<span class="hl">    target_vector.add_scaled(other_vector, grad)            <span class="c"><a class="line-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L556-L558" target="_blank" rel="noopener"># 3. nudge both vectors</a></span></span>
+<span class="hl">    other_vector.add_scaled(old_target_vector, grad)</span>
+
+    <span class="k">if</span> label == 1:
+        <span class="k">return</span> -math.log(score + 1e-10)                     <span class="c"><a class="line-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L560-L562" target="_blank" rel="noopener"># 4. report the loss</a></span>
+    <span class="k">return</span> -math.log(1 - score + 1e-10)</pre>
+<div class="pre-src"><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L548-L562" target="_blank" rel="noopener"><span class="src-name">train_pair</span><span class="src-loc">embed.py lines 548–562</span></a></div>
+
+<h3>The key line: <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L554" target="_blank" rel="noopener"><code>grad = lr * (label - score)</code></a></h3>
+<p><code>label − score</code> is the <strong>error</strong>: the right answer minus the guess.</p>
+<table>
+<thead><tr><th>Situation</th><th>label</th><th>score</th><th class="r">label − score</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>Real pair, guessed "no idea"</td><td class="num">1</td><td class="num">0.5</td><td class="r num ok">+0.5</td><td>pull together firmly</td></tr>
+<tr><td>Real pair, already confident</td><td class="num">1</td><td class="num">0.95</td><td class="r num ok">+0.05</td><td>pull together a little</td></tr>
+<tr><td>Fake pair, guessed "no idea"</td><td class="num">0</td><td class="num">0.5</td><td class="r num bad">−0.5</td><td>push apart firmly</td></tr>
+<tr><td>Fake pair, already confident</td><td class="num">0</td><td class="num">0.05</td><td class="r num bad">−0.05</td><td>push apart a little</td></tr>
+</tbody>
+</table>
+<p>So the size of the nudge depends on how wrong the guess was, and its sign decides the direction. <code>lr</code>, the learning rate, scales everything down so each nudge is tiny.</p>
+
+<h3>What "nudge" means geometrically</h3>
+<p><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L557" target="_blank" rel="noopener"><code>target_vector.add_scaled(other_vector, grad)</code></a> adds <code>grad × other_vector</code> to the target. If <code>grad</code> is positive, the target moves a little <em>towards</em> the other vector; if negative, a little <em>away</em> from it. The other vector gets the mirror-image update. That's why a copy of the target is taken first: both updates must use the values from before either one changed.</p>
+
+<figure>
+<svg viewBox="0 0 720 260" role="img" aria-label="Positive update pulls vectors together, negative update pushes them apart">
+  <g font-size="13">
+    <g transform="translate(150,200)">
+      <text x="-110" y="-178" font-weight="700" fill="var(--pos)">Positive pair (label 1)</text>
+      <line x1="0" y1="0" x2="130" y2="-20" stroke="var(--muted)" stroke-width="2" stroke-dasharray="4 3"/>
+      <line x1="0" y1="0" x2="20" y2="-130" stroke="var(--muted)" stroke-width="2" stroke-dasharray="4 3"/>
+      <line x1="0" y1="0" x2="110" y2="-60" stroke="var(--accent)" stroke-width="3" marker-end="url(#arrA)"/>
+      <line x1="0" y1="0" x2="60" y2="-112" stroke="var(--pos)" stroke-width="3" marker-end="url(#arrP)"/>
+      <path d="M118 -28 Q 125 -48 112 -58" class="stroke" stroke-width="1.5" marker-end="url(#arr)"/>
+      <path d="M28 -126 Q 48 -128 58 -112" class="stroke" stroke-width="1.5" marker-end="url(#arr)"/>
+      <text x="140" y="-14" class="muted">target before</text>
+      <text x="118" y="-62" fill="var(--accent)" font-weight="600">target after</text>
+      <text x="-60" y="-138" class="muted">context before</text>
+      <text x="70" y="-112" fill="var(--pos)" font-weight="600">context after</text>
+      <text x="-110" y="40" class="muted">Angle shrinks: they agree more.</text>
+    </g>
+    <g transform="translate(470,200)">
+      <text x="-90" y="-178" font-weight="700" fill="var(--neg)">Negative pair (label 0)</text>
+      <line x1="0" y1="0" x2="110" y2="-60" stroke="var(--muted)" stroke-width="2" stroke-dasharray="4 3"/>
+      <line x1="0" y1="0" x2="60" y2="-112" stroke="var(--muted)" stroke-width="2" stroke-dasharray="4 3"/>
+      <line x1="0" y1="0" x2="130" y2="-12" stroke="var(--accent)" stroke-width="3" marker-end="url(#arrA)"/>
+      <line x1="0" y1="0" x2="10" y2="-130" stroke="var(--neg)" stroke-width="3" marker-end="url(#arrN)"/>
+      <path d="M112 -56 Q 126 -40 128 -20" class="stroke" stroke-width="1.5" marker-end="url(#arr)"/>
+      <path d="M56 -116 Q 36 -128 18 -128" class="stroke" stroke-width="1.5" marker-end="url(#arr)"/>
+      <text x="138" y="-8" fill="var(--accent)" font-weight="600">target after</text>
+      <text x="20" y="-138" fill="var(--neg)" font-weight="600">random token after</text>
+      <text x="-90" y="40" class="muted">Angle grows: they agree less.</text>
+    </g>
+  </g>
+</svg>
+<figcaption>Dashed: before the nudge. Solid: after. The change is greatly exaggerated here; real nudges are tiny.</figcaption>
+</figure>
+
+<h3>A real example: the very first nudge</h3>
+<p>With seed 42, after the first shuffle the first pair trained on is <strong>(tiny, kitten)</strong>, from "the kitten is tiny and cute" (tiny is two places after kitten, so inside the window). Here are the real numbers (first 4 of the 32 values shown):</p>
+
+<div class="table-wrap">
+<table>
+<tbody>
+<tr><td>w_in[tiny] before</td><td class="num">[-0.00612, 0.00491, 0.00266, -0.00479, …]</td></tr>
+<tr><td>w_out[kitten] before</td><td class="num">[-0.00102, 0.00251, -0.00470, 0.00610, …]</td></tr>
+<tr><td>dot (all 32 values)</td><td class="num">−0.0000665 (about 0: they're random)</td></tr>
+<tr><td>score = sigmoid(dot)</td><td class="num">0.49998 ("no idea")</td></tr>
+<tr><td>lr (epoch 0)</td><td class="num">0.025</td></tr>
+<tr><td>grad = 0.025 × (1 − 0.49998)</td><td class="num">0.0125</td></tr>
+<tr><td>w_in[tiny] after</td><td class="num">[-0.00614, 0.00494, 0.00260, -0.00472, …]</td></tr>
+<tr><td>w_out[kitten] after</td><td class="num">[-0.00110, 0.00257, -0.00467, 0.00604, …]</td></tr>
+<tr><td>loss = −log(0.49998)</td><td class="num">0.693</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The changes are in the fifth decimal place. One nudge does almost nothing; it's the hundreds of thousands of them, all pulling in consistent directions, that build up the structure.</p>
+
+<h3>Try it yourself</h3>
+<p>Drag the slider to change the dot product and see what <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L524-L562" target="_blank" rel="noopener"><code>train_pair</code></a> would compute (with <code>lr = 0.025</code>):</p>
+<figure>
+<div class="play">
+  <label for="dotSlider">dot product: <b id="dotVal" class="num">0.00</b></label>
+  <input type="range" id="dotSlider" min="-6" max="6" step="0.05" value="0">
+  <div class="readout">
+    <div><small>score = sigmoid(dot)</small><b id="rScore">0.500</b></div>
+    <div><small>positive pair: grad</small><b id="rGradPos" style="color:var(--pos)">+0.0125</b></div>
+    <div><small>positive pair: loss</small><b id="rLossPos">0.693</b></div>
+    <div><small>negative pair: grad</small><b id="rGradNeg" style="color:var(--neg)">−0.0125</b></div>
+  </div>
+  <div class="readout">
+    <div><small>negative pair: loss</small><b id="rLossNeg">0.693</b></div>
+  </div>
+</div>
+<figcaption>Notice that the right answer always means a small loss and a small nudge, and the wrong answer a big loss and a big nudge. The model learns most from its biggest mistakes.</figcaption>
+</figure>
+
+<!-- ============================================================ -->
+<h2 id="loss">9. What is "loss"?</h2>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L560-L562" target="_blank" rel="noopener"><span class="src-name">loss in train_pair</span><span class="src-loc">embed.py lines 560–562</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L577-L586" target="_blank" rel="noopener"><span class="src-name">summed in train_epoch</span><span class="src-loc">embed.py lines 577–586</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L588" target="_blank" rel="noopener"><span class="src-name">averaged per pair</span><span class="src-loc">embed.py line 588</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L673-L674" target="_blank" rel="noopener"><span class="src-name">reported as EpochResult</span><span class="src-loc">embed.py lines 673–674</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L590-L593" target="_blank" rel="noopener"><span class="src-name">round_6</span><span class="src-loc">embed.py lines 590–593</span></a></div>
+
+<p><strong>Loss is a number that measures how wrong the model's guesses are.</strong> 0 means perfect; bigger means worse. Training never uses loss to decide anything. It's a report card, so you can watch the model improve.</p>
+
+<p>For a single pair, <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L524-L562" target="_blank" rel="noopener"><code>train_pair</code></a> returns:</p>
+<ul>
+<li>for a real pair: <code>−log(score)</code>, which is small when the score is near 1</li>
+<li>for a fake pair: <code>−log(1 − score)</code>, which is small when the score is near 0</li>
+</ul>
+
+<figure>
+<svg id="lossCurveSvg" viewBox="0 0 720 280" role="img" aria-label="Loss as a function of score for positive and negative pairs"></svg>
+<div class="legend"><span><i style="background:var(--pos)"></i>real pair: −log(score)</span><span><i style="background:var(--neg)"></i>fake pair: −log(1 − score)</span></div>
+<figcaption>Being confidently wrong is punished hard: a real pair scored 0.01 has a loss of 4.6. Being right gives a loss near 0. At score 0.5 ("no idea") both give 0.693.</figcaption>
+</figure>
+
+<p>Why the logarithm? It's the standard way to measure probability guesses (called <em>log loss</em> or <em>cross-entropy</em>). It's gentle when you're nearly right and severe when you're confidently wrong. The <code>+ 1e-10</code> just stops <code>log(0)</code>, which would be infinite.</p>
+
+<h3>The loss that train_skip_gram reports</h3>
+<p><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L564-L588" target="_blank" rel="noopener"><code>train_epoch</code></a> adds up the loss of every <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L524-L562" target="_blank" rel="noopener"><code>train_pair</code></a> call in the epoch (one positive and up to five negatives per pair) and divides by the number of <em>pairs</em>. So the reported loss is roughly the total loss of six guesses.</p>
+
+<div class="callout">
+<p><strong>Why the first loss is about 4.12:</strong> at the start every score is about 0.5, so every guess has a loss of about 0.693. Six guesses per pair gives 6 × 0.693 ≈ 4.16. The reported 4.124 is just under that because a few negatives get skipped, and the model already improves a little during that first epoch.</p>
+</div>
+
+<p>Here's the real loss from a 100-epoch run (vector size 32, window 2, 5 negatives, seed 42):</p>
+
+<figure>
+<svg id="lossRunSvg" viewBox="0 0 720 300" role="img" aria-label="Loss falling over 100 epochs"></svg>
+<figcaption>Fast improvement at first, then slow and steady. The small wiggles come from the random shuffle and random negatives: each epoch sees the data in a different order.</figcaption>
+</figure>
+
+<p>The loss never gets to 0, and it can't. A token like "the" appears next to almost everything, so some "fake" pairs are perfectly plausible, and the model can't score them all perfectly. Loss tells you whether training is working, not how good the embeddings are. For that, look at neighbours, similarities and analogies.</p>
+
+<!-- ============================================================ -->
+<h2 id="epochs">10. Epochs and the learning rate</h2>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L669-L674" target="_blank" rel="noopener"><span class="src-name">the epoch loop</span><span class="src-loc">embed.py lines 669–674</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L512-L522" target="_blank" rel="noopener"><span class="src-name">learning_rate</span><span class="src-loc">embed.py lines 512–522</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L664-L667" target="_blank" rel="noopener"><span class="src-name">lr_start / lr_end</span><span class="src-loc">embed.py lines 664–667</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L659-L662" target="_blank" rel="noopener"><span class="src-name">report every step epochs</span><span class="src-loc">embed.py lines 659–662</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L564-L588" target="_blank" rel="noopener"><span class="src-name">train_epoch</span><span class="src-loc">embed.py lines 564–588</span></a></div>
+
+<p>One <strong>epoch</strong> is one pass through all 2,526 pairs. Note that <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L670" target="_blank" rel="noopener"><code>range(epochs + 1)</code></a> means asking for 100 epochs actually runs 101 passes (0 to 100), to match the TypeScript.</p>
+
+<p>Each epoch: get the learning rate, shuffle the pairs, then train on each one:</p>
+<pre><span class="k">for</span> epoch <span class="k">in</span> range(epochs + 1):
+    lr = <span class="k">self</span>.learning_rate(epoch, epochs, lr_start, lr_end)
+    loss = <span class="k">self</span>.train_epoch(positive_pairs, w_in, w_out, negative_samples, negative_sampling_table, rand, lr)
+    <span class="k">if</span> epoch % step == 0 <span class="k">or</span> epoch == epochs:
+        <span class="k">yield</span> EpochResult(epoch=epoch, loss=<span class="k">self</span>.round_6(loss))</pre>
+<div class="pre-src"><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L670-L674" target="_blank" rel="noopener"><span class="src-name">train_skip_gram</span><span class="src-loc">embed.py lines 670–674</span></a></div>
+
+<h3>The learning rate falls over time</h3>
+<p>The learning rate <code>lr</code> controls the size of every nudge. It starts at 0.025 and falls in a straight line to 0.001 by the last epoch:</p>
+
+<figure>
+<svg id="lrSvg" viewBox="0 0 720 240" role="img" aria-label="Learning rate falling linearly from 0.025 to 0.001"></svg>
+<figcaption>Big steps early to get the rough shape quickly; small steps late to fine-tune without undoing earlier work. It's like sculpting: chisel first, sandpaper last.</figcaption>
+</figure>
+
+<p>One side effect: the schedule depends on the <em>total</em> number of epochs. With 500 epochs the rate is still high at epoch 100, so the loss at epoch 100 of a 500-epoch run isn't the same as at the end of a 100-epoch run.</p>
+
+<!-- ============================================================ -->
+<h2 id="refine">11. How embeddings are refined over time</h2>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L557" target="_blank" rel="noopener"><span class="src-name">where w_in changes</span><span class="src-loc">embed.py line 557</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L599-L608" target="_blank" rel="noopener"><span class="src-name">cosine_similarity</span><span class="src-loc">embed.py lines 599–608</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L610-L612" target="_blank" rel="noopener"><span class="src-name">get_vector</span><span class="src-loc">embed.py lines 610–612</span></a></div>
+
+<p>This is the payoff. The pictures below show the real <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_in</code></a> vectors for 16 words at six moments during the 100-epoch run. Each vector has 32 numbers, so to draw them on a flat page they've been squashed down to 2-D (using PCA, which keeps the two directions in which the vectors differ most). Each panel is scaled to fit, so compare <em>arrangements</em>, not sizes.</p>
+
+<figure>
+<div class="grid-panels" id="scatterPanels"></div>
+<div class="legend" id="scatterLegend"></div>
+<figcaption>Real <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_in</code></a> vectors, seed 42. "avg length" is the average length of the 16 vectors. Before training the words are scattered at random. By the end, related words have moved together: food and pizza far off on their own, lion, tiger and dog together, king next to queen, prince next to princess, and man, woman, boy and girl in one area. It isn't perfect: kitten and puppy sit near the people, which is what you'd expect from a small corpus.</figcaption>
+</figure>
+
+<h3>Watching similarities develop</h3>
+<p>Another way to watch training is to track <strong>cosine similarity</strong>, which measures how closely two vectors point the same way (1 = same direction, 0 = unrelated, −1 = opposite) and ignores their lengths. Here are five pairs through the whole run:</p>
+
+<figure>
+<svg id="simSvg" viewBox="0 0 720 320" role="img" aria-label="Cosine similarity of five word pairs over training"></svg>
+<div class="legend" id="simLegend"></div>
+<figcaption>Three phases. <strong>Start:</strong> random similarities, some even negative. <strong>First few epochs:</strong> everything jumps to almost exactly 1, even man/pizza. <strong>The rest:</strong> unrelated pairs separate while related ones stay close.</figcaption>
+</figure>
+
+<h3>Why does everything become similar at first?</h3>
+<p>That middle phase surprises most people. Here is what's going on.</p>
+<ul>
+<li>The learning rate is at its highest and every guess is maximally wrong, so the first epochs make big updates.</li>
+<li>Every token shares a lot of the same company: almost every sentence has "the", "a" and common letter tokens around. So early on, every target vector gets pulled in roughly the <em>same</em> direction, towards "a token that appears in this corpus".</li>
+<li>That shared direction quickly dominates. The average vector length jumps from 0.03 to 1.42 by epoch 5. When every vector is mostly the same big shared component plus small individual differences, they all point nearly the same way, so cosine similarity is close to 1 for every pair.</li>
+<li>Small individual differences remain underneath. The scatter plots remove the shared component so you can see them. At epoch 5 the main split is between common and rarer words (kitten, puppy, lion, tiger, pizza and food on one side), which is about frequency, not meaning. Over the following epochs the differences grow, driven by the specific company each word keeps and by the negative samples pushing unrelated tokens apart, and the meaning-based groups appear.</li>
+</ul>
+
+<div class="callout pos">
+<p><strong>Summary of refinement:</strong> each pair nudges two vectors a tiny amount. Nudges for words with similar company point in similar directions, so they add up, while random noise cancels out. Over hundreds of thousands of nudges the vectors grow longer and their directions settle into a layout where meaning shows up as geometry.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="random">12. The role of randomness</h2>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L641" target="_blank" rel="noopener"><span class="src-name">rand = mulberry32(42)</span><span class="src-loc">embed.py line 641</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L344-L356" target="_blank" rel="noopener"><span class="src-name">mulberry32</span><span class="src-loc">embed.py lines 344–356</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L490-L491" target="_blank" rel="noopener"><span class="src-name">init_weights draws</span><span class="src-loc">embed.py lines 490–491</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L496-L510" target="_blank" rel="noopener"><span class="src-name">shuffle</span><span class="src-loc">embed.py lines 496–510</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L575" target="_blank" rel="noopener"><span class="src-name">shuffle called each epoch</span><span class="src-loc">embed.py line 575</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L454" target="_blank" rel="noopener"><span class="src-name">sample_negative draws</span><span class="src-loc">embed.py line 454</span></a></div>
+
+<p>Randomness turns up in three places in training. All three draw from <strong>one</strong> random number generator, created on the first lines of <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L632-L761" target="_blank" rel="noopener"><code>train_skip_gram</code></a>:</p>
+<pre>rand = <span class="k">self</span>.mulberry32(42)</pre>
+<div class="pre-src"><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L641" target="_blank" rel="noopener"><span class="src-name">train_skip_gram</span><span class="src-loc">embed.py line 641</span></a></div>
+
+<h3>Where random numbers are used</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Where</th><th>What for</th><th class="r">Draws</th></tr></thead>
+<tbody>
+<tr><td><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L465-L494" target="_blank" rel="noopener"><code>init_weights</code></a></td><td>starting value of every number in w_in and w_out</td><td class="r num">18,304 once<br><span style="color:var(--muted)">(2 × 286 × 32)</span></td></tr>
+<tr><td><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L496-L510" target="_blank" rel="noopener"><code>shuffle</code></a></td><td>new order for the pairs each epoch</td><td class="r num">2,525 per epoch</td></tr>
+<tr><td><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L441-L463" target="_blank" rel="noopener"><code>sample_negative</code></a></td><td>which tokens are the fake contexts</td><td class="r num">12,630 per epoch<br><span style="color:var(--muted)">(5 × 2,526)</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Why each one is needed</h3>
+
+<p><strong>1. Random starting weights break the symmetry.</strong> Suppose every vector started at all zeros. Then every dot product is 0, every score is 0.5, and every nudge is <code>grad × other_vector</code> = <code>grad × [0, 0, …]</code> = nothing. The vectors would stay at zero forever. Even if they started equal but non-zero, tokens with the same starting point would get very similar updates. Small random values give every token a slightly different starting point to grow from. They're kept <em>small</em> so that no token starts with a big built-in bias.</p>
+
+<p><strong>2. Shuffling avoids order effects.</strong> Your corpus is grouped by topic (pets, then royalty, and so on). Without shuffling, each epoch would end with the same topic, and the final nudges of every epoch would always favour it. Shuffling gives every pair a fair, varying position.</p>
+
+<p><strong>3. Random negatives are a cheap stand-in for "everything else".</strong> Ideally, each real pair would push the target away from <em>all</em> 285 other tokens. That would be about 50 times more work. Sampling 5 at random, weighted by frequency, gives about the same effect on average for far less work. That's the "negative sampling" in "skip-gram with negative sampling".</p>
+
+<h3>Seeded, so it's repeatable</h3>
+<p><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L344-L356" target="_blank" rel="noopener"><code>mulberry32</code></a> is a <em>pseudo</em>-random generator: a short formula that turns a starting number (the <strong>seed</strong>) into a sequence that looks random but is completely determined by the seed.</p>
+
+<figure>
+<svg viewBox="0 0 720 170" role="img" aria-label="Same seed gives the same sequence; a different seed gives a different one">
+  <g font-size="13" class="mono">
+    <text x="20" y="30" font-weight="700" font-family="inherit">mulberry32(42)</text>
+    <g id="seqA" transform="translate(150,14)"></g>
+    <text x="20" y="80" font-weight="700">mulberry32(42)</text>
+    <g id="seqB" transform="translate(150,64)"></g>
+    <text x="20" y="130" font-weight="700">mulberry32(7)</text>
+    <g id="seqC" transform="translate(150,114)"></g>
+  </g>
+</svg>
+<figcaption>The first five numbers from each generator. Seed 42 gives exactly the same sequence every time. Seed 7 gives a completely different one.</figcaption>
+</figure>
+
+<p>That's why running your code twice gives identical results to the last digit, and why the Python matches the TypeScript: both use the same generator with the same seed, and draw from it in exactly the same order. (That's also why <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L496-L510" target="_blank" rel="noopener"><code>shuffle</code></a> uses <code>rand()</code> instead of Python's <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L496-L510" target="_blank" rel="noopener"><code>random.shuffle</code></a>, and why <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L465-L494" target="_blank" rel="noopener"><code>init_weights</code></a> alternates between w_in and w_out value by value.)</p>
+
+<div class="callout neg">
+<p><strong>One stream, so everything is connected.</strong> Because there's only one generator, changing <em>anything</em> that uses random numbers changes everything after it. For example, with <code>negative_samples = 4</code> instead of 5, the second epoch's shuffle uses different random numbers, so the order is different, so every later nudge is different.</p>
+</div>
+
+<h3>What happens with a different seed?</h3>
+<p>The seed is fixed at 42 in <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L632-L761" target="_blank" rel="noopener"><code>train_skip_gram</code></a>. Here's what the same 100-epoch training gives with seeds 1, 2 and 3 instead:</p>
+
+<figure>
+<svg id="seedLossSvg" viewBox="0 0 720 260" role="img" aria-label="Loss curves for four seeds nearly overlap"></svg>
+<div class="legend" id="seedLegend"></div>
+<figcaption>The loss curves almost overlap. The random details differ, but the overall learning is the same.</figcaption>
+</figure>
+
+<div class="table-wrap"><table id="seedTable"></table></div>
+
+<p>The big picture is stable: king/queen and man/woman are always very similar, man/pizza is always low, and the easy analogies always work. The details vary, and borderline cases flip. "his − man + woman" finds <strong>her</strong> with seeds 1 and 2, but not with 3 or 42. When a result changes with the seed, the model hasn't really learned it; it was close to a tie and the random details decided it. A bigger corpus makes results less sensitive to the seed.</p>
+
+<!-- ============================================================ -->
+<h2 id="results">13. After training: the results</h2>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L614-L628" target="_blank" rel="noopener"><span class="src-name">find_query_indices</span><span class="src-loc">embed.py lines 614–628</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L676-L680" target="_blank" rel="noopener"><span class="src-name">embeddings</span><span class="src-loc">embed.py lines 676–680</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L682-L696" target="_blank" rel="noopener"><span class="src-name">neighbours</span><span class="src-loc">embed.py lines 682–696</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L698-L707" target="_blank" rel="noopener"><span class="src-name">similarities</span><span class="src-loc">embed.py lines 698–707</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L709-L739" target="_blank" rel="noopener"><span class="src-name">analogies</span><span class="src-loc">embed.py lines 709–739</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L153-L161" target="_blank" rel="noopener"><span class="src-name">ANALOGIES</span><span class="src-loc">embed.py lines 153–161</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L741-L753" target="_blank" rel="noopener"><span class="src-name">save the model</span><span class="src-loc">embed.py lines 741–753</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L755-L761" target="_blank" rel="noopener"><span class="src-name">yield TrainEmbedResult</span><span class="src-loc">embed.py lines 755–761</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L243-L288" target="_blank" rel="noopener"><span class="src-name">result classes</span><span class="src-loc">embed.py lines 243–288</span></a></div>
+
+<p>Once the loop finishes, <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_in</code></a> holds the embeddings, and the rest of <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L632-L761" target="_blank" rel="noopener"><code>train_skip_gram</code></a> reports on the query words you passed in <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L235-L240" target="_blank" rel="noopener"><code>opts.words</code></a>:</p>
+
+<ul>
+<li><strong>embeddings:</strong> each query word's vector, rounded to 6 decimal places (<a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L610-L612" target="_blank" rel="noopener"><code>get_vector</code></a>).</li>
+<li><strong>neighbors:</strong> for each query word, the 5 tokens in the whole vocabulary with the highest cosine similarity.</li>
+<li><strong>similarities:</strong> cosine similarity for every pair of query words.</li>
+<li><strong>analogies:</strong> vector arithmetic, shown below.</li>
+<li><strong>warnings:</strong> query words that aren't a single token, so have no vector of their own (<a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L614-L628" target="_blank" rel="noopener"><code>find_query_indices</code></a>).</li>
+</ul>
+
+<h3>Analogies: arithmetic on meaning</h3>
+<p>If the vectors have captured meaning, then the <em>difference</em> between two vectors should capture a relationship. <code>king − man</code> is roughly "royalty without the male part"; adding <code>woman</code> should land near "queen":</p>
+
+<figure>
+<svg viewBox="0 0 720 260" role="img" aria-label="king minus man plus woman lands near queen">
+  <g font-size="14" transform="translate(40,0)">
+    <circle cx="140" cy="200" r="6" class="accent"/><text x="120" y="228" font-weight="600">man</text>
+    <circle cx="300" cy="200" r="6" class="accent"/><text x="276" y="228" font-weight="600">woman</text>
+    <circle cx="180" cy="60" r="6" class="accent"/><text x="140" y="48" font-weight="600">king</text>
+    <circle cx="340" cy="60" r="6" class="pos"/><text x="352" y="52" font-weight="700" fill="var(--pos)">queen</text>
+    <line x1="140" y1="200" x2="176" y2="66" stroke="var(--violet)" stroke-width="2.5" marker-end="url(#arrM)"/>
+    <line x1="300" y1="200" x2="336" y2="66" stroke="var(--violet)" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#arrM)"/>
+    <line x1="146" y1="200" x2="292" y2="200" stroke="var(--muted)" stroke-width="2" stroke-dasharray="3 3"/>
+    <text x="62" y="135" fill="var(--violet)" font-weight="600" text-anchor="end">king − man</text>
+    <text x="330" y="140" fill="var(--violet)" font-weight="600">same arrow,</text>
+    <text x="330" y="158" fill="var(--violet)" font-weight="600">starting at woman</text>
+    <text x="440" y="80" font-size="13" class="muted">The code computes</text>
+    <text x="440" y="100" font-size="13" class="mono">w_in[king] − w_in[man] + w_in[woman]</text>
+    <text x="440" y="124" font-size="13" class="muted">then finds the closest token,</text>
+    <text x="440" y="142" font-size="13" class="muted">not counting king, man and woman.</text>
+    <text x="440" y="176" font-size="13">Your run (seed 42, 100 epochs):</text>
+    <text x="440" y="196" font-size="13" class="mono" fill="var(--pos)">→ queen (0.89)</text>
+  </g>
+</svg>
+<figcaption>Relationships become directions. The arrow from man to king is roughly parallel to the arrow from woman to queen.</figcaption>
+</figure>
+
+<p>With your small corpus some analogies work (king → queen, queen → king, prince → princess, he → she) and some don't (kitten − cat + dog gives tiger instead of puppy). Analogies are a strict test: the answer must be the single closest of 286 tokens, so a small amount of noise can make the wrong one win.</p>
+
+<!-- ============================================================ -->
+<h2 id="glossary">14. Glossary</h2>
+<table>
+<tbody>
+<tr><td><strong>Token</strong></td><td>A piece of text from the BPE tokenizer: a whole word, part of a word, or a single character.</td></tr>
+<tr><td><strong>Index</strong></td><td>A token's position in the vocabulary (0 = most frequent).</td></tr>
+<tr><td><strong>Embedding / vector</strong></td><td>A token's list of numbers (32 in your runs); its row in <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_in</code></a>.</td></tr>
+<tr><td><strong>Target / context</strong></td><td>In a training pair, the token in the middle of the window, and one of its neighbours.</td></tr>
+<tr><td><strong>Positive pair</strong></td><td>A real (target, context) pair from the text. Label 1.</td></tr>
+<tr><td><strong>Negative sample</strong></td><td>A made-up pair: the target with a random token. Label 0.</td></tr>
+<tr><td><strong>Dot product</strong></td><td>Sum of element-by-element products; measures how much two vectors agree.</td></tr>
+<tr><td><strong>Sigmoid</strong></td><td>Squashes any number into 0–1 so it can be read as a probability.</td></tr>
+<tr><td><strong>Score</strong></td><td><code>sigmoid(dot)</code>: the model's guess that a pair is real.</td></tr>
+<tr><td><strong>Gradient (grad)</strong></td><td><code>lr × (label − score)</code>: how big the nudge is and which way it goes.</td></tr>
+<tr><td><strong>Learning rate (lr)</strong></td><td>Scales every nudge. Falls from 0.025 to 0.001 over training.</td></tr>
+<tr><td><strong>Loss</strong></td><td>How wrong the guesses were: <code>−log</code> of the probability given to the right answer. 0 = perfect.</td></tr>
+<tr><td><strong>Epoch</strong></td><td>One pass through every training pair.</td></tr>
+<tr><td><strong>Cosine similarity</strong></td><td>How closely two vectors point the same way, from −1 to 1, ignoring length.</td></tr>
+<tr><td><strong>Seed</strong></td><td>The starting number for the random generator. Same seed → same results.</td></tr>
+</tbody>
+</table>
+
+</main>
+
+<script>
+const DATA = {"loss":[4.12418,4.04529,3.49489,2.99781,2.72443,2.55331,2.40853,2.29619,2.23622,2.17985,2.1572,2.14024,2.10875,2.09154,2.07402,2.07519,2.05742,2.04077,2.02419,2.01081,1.97623,1.98469,1.96207,1.94565,1.94852,1.92347,1.92063,1.88622,1.87449,1.85866,1.8515,1.82424,1.82352,1.80782,1.79546,1.80187,1.786,1.76497,1.74496,1.71193,1.73036,1.71141,1.70093,1.68577,1.68517,1.6753,1.65443,1.63891,1.61756,1.61993,1.62155,1.61244,1.6006,1.58428,1.575,1.56112,1.54911,1.54068,1.53477,1.53216,1.52556,1.51498,1.47772,1.50906,1.47882,1.48123,1.46305,1.47833,1.44497,1.46215,1.45266,1.4239,1.42214,1.44065,1.40724,1.39035,1.39897,1.39044,1.39791,1.38605,1.38508,1.40106,1.38788,1.37854,1.34979,1.3529,1.366,1.35401,1.3741,1.34356,1.33182,1.36947,1.33811,1.35695,1.33003,1.3357,1.34625,1.32932,1.34914,1.32312,1.32214],"sims":{"king/queen":[0.1788,0.5907,0.9894,0.999,0.9996,0.9993,0.9996,0.9993,0.9985,0.9986,0.9978,0.9973,0.9946,0.9981,0.999,0.9987,0.9983,0.9973,0.9988,0.9988,0.9982,0.9973,0.9967,0.9991,0.9977,0.9979,0.9945,0.9974,0.9977,0.9953,0.9938,0.9968,0.9943,0.996,0.9937,0.9893,0.9848,0.983,0.9823,0.9849,0.992,0.9914,0.9908,0.9901,0.9913,0.9902,0.9907,0.9901,0.9894,0.9893,0.9897,0.9883,0.9882,0.9882,0.9875,0.9854,0.9828,0.9823,0.9818,0.9828,0.9807,0.9834,0.9836,0.9842,0.9824,0.9816,0.9821,0.982,0.9801,0.9789,0.9785,0.9773,0.9769,0.9767,0.9748,0.9747,0.9728,0.9722,0.9711,0.9702,0.9706,0.9719,0.9711,0.9694,0.9688,0.9686,0.9671,0.9663,0.9656,0.9658,0.9661,0.9658,0.9655,0.965,0.9649,0.9646,0.9646,0.9645,0.9642,0.9642,0.9642,0.9642],"man/woman":[-0.2422,0.3398,0.9895,0.9991,0.9996,0.9997,0.9998,0.999,0.9997,0.9997,0.9965,0.998,0.9994,0.9997,0.9984,0.9989,0.9988,0.9988,0.9976,0.9983,0.9967,0.9974,0.9986,0.9992,0.998,0.9979,0.9974,0.9977,0.9994,0.9982,0.9983,0.9955,0.9959,0.9972,0.996,0.9939,0.9947,0.9959,0.9963,0.9961,0.9955,0.9943,0.995,0.9961,0.996,0.9952,0.9942,0.9936,0.992,0.9916,0.9906,0.9906,0.9904,0.9898,0.9883,0.9896,0.9891,0.9881,0.9882,0.9899,0.989,0.9882,0.9865,0.9874,0.9873,0.9852,0.9855,0.9855,0.9837,0.9832,0.9812,0.9805,0.9803,0.9798,0.9795,0.979,0.9781,0.977,0.9778,0.9762,0.975,0.9746,0.9748,0.9744,0.9748,0.9752,0.9748,0.9742,0.9739,0.9735,0.9728,0.9726,0.972,0.9717,0.9714,0.971,0.9708,0.9706,0.9703,0.9701,0.9701,0.9699],"cat/dog":[-0.0343,0.4204,0.9929,0.9994,0.9997,0.9998,0.9996,0.9997,0.9997,0.9998,0.9982,0.9985,0.999,0.9993,0.9992,0.9993,0.9977,0.9978,0.9978,0.997,0.9968,0.9957,0.9919,0.9904,0.9824,0.9814,0.9733,0.9737,0.9623,0.9597,0.9559,0.9558,0.956,0.9475,0.9382,0.9296,0.9267,0.9121,0.9069,0.8995,0.8909,0.883,0.8725,0.8712,0.8665,0.8572,0.855,0.8532,0.8536,0.8503,0.8397,0.8282,0.8197,0.8109,0.8056,0.7948,0.7904,0.7874,0.7779,0.7742,0.7657,0.766,0.7629,0.7593,0.7585,0.7599,0.7593,0.759,0.7554,0.754,0.7488,0.743,0.7371,0.7354,0.7315,0.733,0.7305,0.732,0.7262,0.7274,0.7283,0.7282,0.727,0.726,0.7276,0.727,0.7252,0.7237,0.7218,0.7216,0.7196,0.7156,0.7155,0.7157,0.7163,0.717,0.7172,0.7174,0.7174,0.7172,0.7171,0.7163],"king/dog":[-0.1263,0.2644,0.9886,0.999,0.9995,0.9996,0.9993,0.9988,0.9988,0.9994,0.9992,0.9973,0.9975,0.9981,0.9981,0.9985,0.9948,0.996,0.9893,0.9911,0.991,0.987,0.9845,0.9818,0.9756,0.977,0.9687,0.9598,0.9504,0.941,0.9349,0.9275,0.9256,0.9113,0.8998,0.8886,0.8789,0.8612,0.847,0.8402,0.8297,0.8171,0.8075,0.7973,0.7943,0.7782,0.7675,0.7608,0.7543,0.7474,0.7358,0.7229,0.7099,0.7014,0.6996,0.6904,0.6806,0.6808,0.6663,0.6637,0.6595,0.6598,0.6626,0.6642,0.6605,0.6599,0.6609,0.6621,0.6602,0.6606,0.6573,0.649,0.6497,0.6496,0.6458,0.6449,0.6393,0.6405,0.6378,0.6378,0.6367,0.629,0.6259,0.6233,0.6259,0.6215,0.6192,0.6202,0.6179,0.6167,0.6131,0.6091,0.6072,0.6077,0.6085,0.6096,0.6088,0.6086,0.6079,0.6081,0.6076,0.6065],"man/pizza":[-0.1389,0.1656,0.9397,0.9971,0.9991,0.9984,0.9958,0.9917,0.9711,0.9566,0.9328,0.9225,0.914,0.911,0.9028,0.8849,0.879,0.8555,0.8603,0.8358,0.8431,0.8244,0.8022,0.7774,0.765,0.7724,0.766,0.7351,0.7236,0.7207,0.6974,0.6872,0.65,0.6402,0.6262,0.6041,0.5961,0.5807,0.5731,0.566,0.549,0.5659,0.5502,0.5365,0.5027,0.4847,0.4943,0.4875,0.4774,0.4854,0.487,0.4561,0.459,0.454,0.4514,0.4465,0.4433,0.4319,0.4337,0.4288,0.4256,0.4154,0.4256,0.4165,0.4217,0.4174,0.4136,0.3977,0.3928,0.3979,0.3959,0.3938,0.387,0.3911,0.3889,0.3987,0.3969,0.3993,0.3977,0.3915,0.3938,0.3932,0.3894,0.391,0.3819,0.3822,0.3857,0.382,0.3749,0.379,0.3833,0.3855,0.3843,0.3848,0.38,0.3826,0.3845,0.3856,0.3841,0.3845,0.3832,0.3838]},"proj":{"init":{"king":[0.01524,0.0053],"queen":[0.00417,-0.01312],"man":[-0.01257,0.01296],"woman":[0.01175,-0.00225],"prince":[-0.01168,-0.00323],"princess":[0.011,-0.0057],"boy":[0.0026,0.00726],"girl":[-0.00321,-0.00848],"cat":[0.01125,-0.01103],"dog":[-0.01006,-0.00416],"kitten":[-0.01152,-0.01708],"puppy":[-0.01783,0.00415],"lion":[0.00251,0.00927],"tiger":[0.00348,0.01204],"food":[0.001,0.00638],"pizza":[0.00389,0.00769]},"e0":{"king":[-0.01309,-0.01336],"queen":[-0.02462,0.00639],"man":[0.00357,0.0056],"woman":[-0.01759,-0.00686],"prince":[0.00896,0.01069],"princess":[-0.00676,-0.00464],"boy":[0.00988,-0.00738],"girl":[-0.004,0.00754],"cat":[-0.01808,-0.001],"dog":[0.00043,0.01208],"kitten":[0.00075,0.01764],"puppy":[0.01886,0.01027],"lion":[0.0084,-0.00965],"tiger":[0.01801,-0.01284],"food":[0.01057,-0.00542],"pizza":[0.0047,-0.00906]},"e5":{"king":[-0.36834,0.00886],"queen":[-0.34477,-0.02943],"man":[-0.47968,-0.00022],"woman":[-0.36522,0.00953],"prince":[-0.16063,0.04561],"princess":[-0.14967,0.0135],"boy":[-0.21172,0.03637],"girl":[-0.18221,-0.01105],"cat":[-0.45754,-0.01204],"dog":[-0.36911,-0.03998],"kitten":[0.33007,-0.00192],"puppy":[0.5269,0.04345],"lion":[0.50978,0.00282],"tiger":[0.62567,0.01691],"food":[0.69767,-0.03397],"pizza":[0.39882,-0.04844]},"e20":{"king":[-0.1079,0.14843],"queen":[-0.28335,0.09006],"man":[-0.80533,-0.20878],"woman":[-0.40987,-0.42768],"prince":[-0.58131,0.19354],"princess":[-0.55376,0.02321],"boy":[-0.5487,0.12704],"girl":[-0.35994,-0.11724],"cat":[-0.15947,0.34626],"dog":[0.14247,0.31672],"kitten":[-0.09104,-0.21374],"puppy":[0.18029,-0.2305],"lion":[0.40203,0.00866],"tiger":[0.6091,-0.05673],"food":[1.54927,-0.16268],"pizza":[1.0175,0.16342]},"e50":{"king":[-0.17488,-0.70531],"queen":[-0.40486,-0.57974],"man":[-1.34233,0.77762],"woman":[-0.51513,0.72884],"prince":[-0.97843,-0.49927],"princess":[-0.85258,-0.36792],"boy":[-0.80734,0.12322],"girl":[-0.55835,0.14119],"cat":[0.05771,-0.63621],"dog":[0.97247,-0.72211],"kitten":[-0.5366,0.35832],"puppy":[-0.35955,0.29779],"lion":[0.33832,0.30492],"tiger":[0.92517,0.2041],"food":[2.18889,0.05111],"pizza":[2.0475,0.52346]},"e100":{"king":[-0.40802,-0.99562],"queen":[-0.55466,-0.95262],"man":[-1.5008,-0.25196],"woman":[-0.65034,-0.31622],"prince":[-1.1409,0.26929],"princess":[-1.12141,0.28475],"boy":[-0.93294,-0.16109],"girl":[-0.69177,-0.33537],"cat":[0.25238,-0.28337],"dog":[1.25381,0.89169],"kitten":[-0.48,0.59242],"puppy":[-0.32855,0.38776],"lion":[0.43295,1.0727],"tiger":[0.94055,1.22623],"food":[2.47766,-0.92361],"pizza":[2.45204,-0.50497]}},"norms":{"init":0.0249,"e0":0.0298,"e5":1.424,"e20":2.2429,"e50":2.8446,"e100":3.2959},"words":["king","queen","man","woman","prince","princess","boy","girl","cat","dog","kitten","puppy","lion","tiger","food","pizza"],"negTable":[{"t":"e","f":312,"raw":0.07823,"p":0.04605},{"t":"t","f":221,"raw":0.05542,"p":0.03556},{"t":"a","f":207,"raw":0.05191,"p":0.03386},{"t":"h","f":174,"raw":0.04363,"p":0.02972},{"t":"s","f":167,"raw":0.04188,"p":0.02882},{"t":"i","f":163,"raw":0.04087,"p":0.0283},{"t":"n","f":163,"raw":0.04087,"p":0.0283},{"t":"o","f":154,"raw":0.03862,"p":0.02712},{"t":"king","f":10,"raw":0.00251,"p":0.00349},{"t":"kitten","f":3,"raw":0.00075,"p":0.00141},{"t":"throne","f":2,"raw":0.0005,"p":0.00104}],"seeds":{"1":{"loss":[4.11825,4.02021,3.44975,2.9641,2.68409,2.5331,2.36548,2.27907,2.22965,2.1694,2.15507,2.11717,2.10679,2.11249,2.08408,2.07603,2.05689,2.03723,2.02899,2.00862,1.97791,1.96254,1.95308,1.94087,1.93747,1.91013,1.89469,1.87577,1.86944,1.85703,1.83024,1.80088,1.80548,1.80454,1.77775,1.7687,1.77256,1.75788,1.74633,1.70801,1.70234,1.70502,1.7024,1.68583,1.65765,1.66168,1.65337,1.64943,1.62802,1.58196,1.58999,1.59354,1.57322,1.56547,1.56599,1.55421,1.55295,1.53062,1.52919,1.51752,1.50609,1.52131,1.48492,1.49182,1.479,1.45786,1.46225,1.46076,1.45087,1.44265,1.43093,1.43524,1.41223,1.41999,1.40917,1.40833,1.39325,1.38101,1.38298,1.38829,1.3757,1.36149,1.35462,1.37111,1.36015,1.35095,1.34922,1.35503,1.3553,1.3429,1.33347,1.33308,1.33452,1.32992,1.33624,1.32609,1.33277,1.33702,1.32108,1.30233,1.33036],"an":["queen","king","princess","tiger","oyal","she","her"],"sims":{"king/queen":0.9691,"man/woman":0.9789,"cat/dog":0.7286,"king/dog":0.6281,"man/pizza":0.3824}},"2":{"loss":[4.12213,4.03178,3.45762,2.9639,2.72129,2.54441,2.39994,2.28539,2.21872,2.2047,2.14458,2.1377,2.11064,2.09375,2.0818,2.05905,2.04717,2.02885,2.00682,2.00521,1.98949,1.96746,1.96956,1.94551,1.93925,1.91047,1.90612,1.89175,1.86546,1.8509,1.82956,1.83007,1.81099,1.77463,1.79619,1.78217,1.7544,1.76431,1.7411,1.72892,1.70538,1.71472,1.68588,1.67662,1.68104,1.66343,1.65388,1.64117,1.60575,1.62596,1.61136,1.60491,1.58374,1.60004,1.58221,1.53894,1.53728,1.53882,1.51644,1.50106,1.51642,1.49861,1.50951,1.4727,1.47594,1.46183,1.47007,1.44071,1.44876,1.42521,1.43424,1.41513,1.42218,1.41169,1.41282,1.3893,1.41089,1.40749,1.38663,1.3895,1.41809,1.40148,1.37453,1.38199,1.37552,1.35576,1.34322,1.37012,1.34016,1.36105,1.33567,1.33433,1.34131,1.3576,1.33578,1.30919,1.32113,1.32276,1.32604,1.32229,1.31909],"an":["queen","king","princess","lion","oyal","she","her"],"sims":{"king/queen":0.9685,"man/woman":0.9767,"cat/dog":0.7775,"king/dog":0.6447,"man/pizza":0.382}},"3":{"loss":[4.12379,4.05351,3.51626,3.00232,2.74074,2.55808,2.42862,2.29245,2.22168,2.18381,2.15732,2.12586,2.11785,2.08902,2.06891,2.06573,2.04195,2.02575,2.00787,2.00358,1.99356,1.98211,1.9605,1.94976,1.93753,1.91106,1.8841,1.86987,1.86169,1.84746,1.83817,1.8482,1.80332,1.79961,1.78037,1.77629,1.76484,1.75582,1.74329,1.73509,1.71811,1.70449,1.7113,1.67935,1.692,1.66131,1.65602,1.63006,1.63426,1.61983,1.59921,1.58491,1.59892,1.56357,1.57364,1.5574,1.56246,1.54284,1.53569,1.53473,1.51701,1.51056,1.50261,1.50649,1.48376,1.47915,1.46518,1.47341,1.45766,1.45791,1.44069,1.42828,1.442,1.42907,1.4139,1.4206,1.40308,1.40037,1.36989,1.39148,1.38409,1.38998,1.40091,1.37452,1.38417,1.36492,1.35432,1.34658,1.35183,1.36097,1.35094,1.33322,1.35025,1.3383,1.3324,1.33858,1.35071,1.33821,1.35646,1.32568,1.32865],"an":["queen","king","princess","tiger","young","she","ate"],"sims":{"king/queen":0.966,"man/woman":0.9782,"cat/dog":0.7649,"king/dog":0.5931,"man/pizza":0.432}},"42":{"loss":[4.12418,4.04529,3.49489,2.99781,2.72443,2.55331,2.40853,2.29619,2.23622,2.17985,2.1572,2.14024,2.10875,2.09154,2.07402,2.07519,2.05742,2.04077,2.02419,2.01081,1.97623,1.98469,1.96207,1.94565,1.94852,1.92347,1.92063,1.88622,1.87449,1.85866,1.8515,1.82424,1.82352,1.80782,1.79546,1.80187,1.786,1.76497,1.74496,1.71193,1.73036,1.71141,1.70093,1.68577,1.68517,1.6753,1.65443,1.63891,1.61756,1.61993,1.62155,1.61244,1.6006,1.58428,1.575,1.56112,1.54911,1.54068,1.53477,1.53216,1.52556,1.51498,1.47772,1.50906,1.47882,1.48123,1.46305,1.47833,1.44497,1.46215,1.45266,1.4239,1.42214,1.44065,1.40724,1.39035,1.39897,1.39044,1.39791,1.38605,1.38508,1.40106,1.38788,1.37854,1.34979,1.3529,1.366,1.35401,1.3741,1.34356,1.33182,1.36947,1.33811,1.35695,1.33003,1.3357,1.34625,1.32932,1.34914,1.32312,1.32214],"an":["queen","king","princess","tiger","oyal","she","ate"],"sims":{"king/queen":0.9642,"man/woman":0.9699,"cat/dog":0.7163,"king/dog":0.6065,"man/pizza":0.3838}}},"analogyQ":["king - man + woman","queen - woman + man","prince - boy + girl","kitten - cat + dog","puppy - dog + cat","he - man + woman","his - man + woman"]};
+
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text !== undefined) e.textContent = text;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const SERIES = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--s5)"];
+
+// Generic line chart: series = [{values, xs?, color, width?, dash?}]
+function lineChart(svg, opts) {
+  svg.innerHTML = "";
+  const W = 720, H = +svg.getAttribute("viewBox").split(" ")[3];
+  const m = { l: 60, r: 20, t: 16, b: 46 };
+  const x0 = opts.xMin ?? 0, x1 = opts.xMax, y0 = opts.yMin, y1 = opts.yMax;
+  const X = x => m.l + (x - x0) / (x1 - x0) * (W - m.l - m.r);
+  const Y = y => H - m.b - (y - y0) / (y1 - y0) * (H - m.t - m.b);
+  for (const t of opts.yTicks) {
+    el("line", { x1: m.l, x2: W - m.r, y1: Y(t), y2: Y(t), class: "grid" }, svg);
+    el("text", { x: m.l - 8, y: Y(t) + 4, "text-anchor": "end", "font-size": 12, class: "muted mono" }, svg, opts.yFmt ? opts.yFmt(t) : t);
+  }
+  for (const t of opts.xTicks) {
+    el("text", { x: X(t), y: H - m.b + 18, "text-anchor": "middle", "font-size": 12, class: "muted mono" }, svg, opts.xFmt ? opts.xFmt(t) : t);
+  }
+  el("line", { x1: m.l, x2: W - m.r, y1: H - m.b, y2: H - m.b, class: "stroke-muted" }, svg);
+  if (opts.xLabel) el("text", { x: (m.l + W - m.r) / 2, y: H - 8, "text-anchor": "middle", "font-size": 13, class: "muted" }, svg, opts.xLabel);
+  if (opts.yLabel) el("text", { x: 14, y: (m.t + H - m.b) / 2, "text-anchor": "middle", "font-size": 13, class: "muted", transform: `rotate(-90 14 ${(m.t + H - m.b) / 2})` }, svg, opts.yLabel);
+  for (const s of opts.series) {
+    const xs = s.xs || s.values.map((_, i) => i + (opts.xOffset || 0));
+    const d = s.values.map((v, i) => (i ? "L" : "M") + X(xs[i]).toFixed(1) + " " + Y(Math.max(y0, Math.min(y1, v))).toFixed(1)).join(" ");
+    el("path", { d, fill: "none", stroke: s.color, "stroke-width": s.width || 2.5, "stroke-dasharray": s.dash || "", "stroke-linejoin": "round" }, svg);
+  }
+  (opts.marks || []).forEach(mk => {
+    el("circle", { cx: X(mk.x), cy: Y(mk.y), r: 4.5, fill: mk.color || "var(--ink)" }, svg);
+    el("text", { x: X(mk.x) + (mk.dx || 8), y: Y(mk.y) + (mk.dy || -8), "font-size": 12.5, "text-anchor": mk.anchor || "start", "font-weight": 600 }, svg, mk.label);
+  });
+  return { X, Y };
+}
+
+function legend(container, items) {
+  container.innerHTML = items.map(([c, t]) => `<span><i style="background:${c}"></i>${t}</span>`).join("");
+}
+
+// ---- Section 3: token examples
+(function () {
+  const sents = [
+    { text: "the cat sat on the mat", tokens: ["the", "cat", "sat", "on", "the", "m", "at"], indices: [9, 38, 249, 35, 9, 17, 26] },
+    { text: "the princess played in the castle", tokens: ["the", "princess", "played", "in", "the", "castle"], indices: [9, 85, 244, 18, 9, 184] },
+    { text: "the kitten chased the mouse", tokens: ["the", "kitten", "chased", "the", "mouse"], indices: [9, 152, 187, 9, 157] },
+  ];
+  document.getElementById("tokenExamples").innerHTML = sents.map(s =>
+    `<div style="margin:6px 0 14px"><div style="font-size:0.9rem;color:var(--muted)">"${s.text}"</div><div class="tokens">` +
+    s.tokens.map((t, i) => `<span class="tok"><b>${t}</b><span>${s.indices[i]}</span></span>`).join("") + "</div></div>").join("");
+})();
+
+// ---- Section 4: sliding window
+(function () {
+  const toks = ["the", "cat", "sat", "on", "the", "m", "at"];
+  const svg = document.getElementById("windowSvg");
+  const slider = document.getElementById("windowPos");
+  const label = document.getElementById("windowTarget");
+  const bw = 84, gap = 10, x0 = 30, y = 60;
+  function draw(t) {
+    svg.innerHTML = "";
+    const lo = Math.max(0, t - 2), hi = Math.min(toks.length - 1, t + 2);
+    el("rect", { x: x0 + lo * (bw + gap) - 6, y: y - 10, width: (hi - lo + 1) * (bw + gap) - gap + 12, height: 64, rx: 10, fill: "none", stroke: "var(--accent)", "stroke-dasharray": "5 4" }, svg);
+    el("text", { x: x0 + lo * (bw + gap) - 2, y: y - 18, "font-size": 12, fill: "var(--accent)" }, svg, "window");
+    toks.forEach((tk, i) => {
+      const cls = i === t ? "box-accent" : (i >= lo && i <= hi ? "box-pos" : "box");
+      el("rect", { x: x0 + i * (bw + gap), y, width: bw, height: 44, rx: 7, class: cls }, svg);
+      el("text", { x: x0 + i * (bw + gap) + bw / 2, y: y + 28, "text-anchor": "middle", "font-size": 16, "font-weight": i === t ? 700 : 500, class: "mono" }, svg, tk);
+    });
+    let px = x0, py = 150;
+    el("text", { x: x0, y: 140, "font-size": 13, class: "muted" }, svg, "pairs produced for this target:");
+    for (let j = lo; j <= hi; j++) {
+      if (j === t) continue;
+      const txt = `(${toks[t]}, ${toks[j]})`;
+      const w = txt.length * 8.6 + 18;
+      el("rect", { x: px, y: py + 6, width: w, height: 30, rx: 6, class: "box-pos" }, svg);
+      el("text", { x: px + 9, y: py + 26, "font-size": 14, class: "mono" }, svg, txt);
+      px += w + 8;
+    }
+    label.innerHTML = `<code>${toks[t]}</code>`;
+  }
+  slider.addEventListener("input", () => draw(+slider.value));
+  draw(+slider.value);
+  const pairs = [["the","cat"],["the","sat"],["cat","the"],["cat","sat"],["cat","on"],["sat","the"],["sat","cat"],["sat","on"],["sat","the"],["on","cat"],["on","sat"],["on","the"],["on","m"],["the","sat"],["the","on"],["the","m"],["the","at"],["m","on"],["m","the"],["m","at"],["at","the"],["at","m"]];
+  document.getElementById("pairList").innerHTML = pairs.map(p => `<span class="tok" style="flex-direction:row;gap:4px"><b>(${p[0]}, ${p[1]})</b></span>`).join("");
+})();
+
+// ---- Section 5: weight matrices (real-looking magnitudes, deterministic)
+(function () {
+  function rng(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  const r = rng(42);
+  const rows = ["0  e", "1  t", "2  a", "…", "9  the", "…", "38 cat", "…", "285 …"];
+  function mat(g, offset) {
+    const cw = 22, ch = 22, cols = 9;
+    rows.forEach((name, ri) => {
+      el("text", { x: -8, y: ri * (ch + 2) + 15, "text-anchor": "end", "font-size": 11, class: "muted mono" }, g, name);
+      if (name === "…") { el("text", { x: cols * cw / 2, y: ri * (ch + 2) + 15, "text-anchor": "middle", class: "muted" }, g, "⋮"); return; }
+      for (let c = 0; c < cols; c++) {
+        if (c === 7) { el("text", { x: c * cw + 10, y: ri * (ch + 2) + 15, "text-anchor": "middle", class: "muted", "font-size": 11 }, g, "…"); continue; }
+        const v = (r() - 0.5);
+        const color = v >= 0 ? "var(--accent)" : "var(--neg)";
+        el("rect", { x: c * cw, y: ri * (ch + 2), width: cw - 2, height: ch, rx: 3, fill: color, "fill-opacity": (0.12 + Math.abs(v) * 1.2).toFixed(2) }, g);
+      }
+    });
+    el("text", { x: 0, y: rows.length * (ch + 2) + 16, "font-size": 11, class: "muted" }, g, "dim 0 … dim 31   (32 columns)");
+  }
+  mat(document.getElementById("matIn"));
+  mat(document.getElementById("matOut"));
+})();
+
+// ---- Section 6: sigmoid
+(function () {
+  const svg = document.getElementById("sigmoidSvg");
+  const xs = [], vs = [];
+  for (let x = -8; x <= 8.001; x += 0.1) { xs.push(x); vs.push(x > 6 ? 1 : x < -6 ? 0 : 1 / (1 + Math.exp(-x))); }
+  lineChart(svg, { xMin: -8, xMax: 8, yMin: 0, yMax: 1, xTicks: [-8, -6, -4, -2, 0, 2, 4, 6, 8], yTicks: [0, 0.5, 1], xLabel: "dot product", yLabel: "score",
+    series: [{ values: vs, xs, color: "var(--accent)", width: 3 }],
+    marks: [{ x: 0, y: 0.5, label: "dot 0 → 0.5", dx: 10, dy: 16 }, { x: 4, y: 1 / (1 + Math.exp(-4)), label: "dot 4 → 0.98", dx: 10, dy: 18 }, { x: -4, y: 1 / (1 + Math.exp(4)), label: "dot −4 → 0.02", dx: -6, dy: -14, anchor: "end" }] });
+})();
+
+// ---- Section 7: negative fan
+(function () {
+  const g = document.getElementById("negFan");
+  const items = [["cat", 1], ["e", 0], ["the", 0], ["s", 0], ["throne", 0], ["at", 0]];
+  items.forEach(([t, lab], i) => {
+    const y = 14 + i * 34;
+    const pos = lab === 1;
+    el("path", { d: `M130 108 C 200 108, 220 ${y + 15}, 290 ${y + 15}`, fill: "none", stroke: pos ? "var(--pos)" : "var(--neg)", "stroke-width": pos ? 2.5 : 1.5, "stroke-dasharray": pos ? "" : "5 4" }, g);
+    el("rect", { x: 292, y, width: 90, height: 30, rx: 6, class: pos ? "box-pos" : "box-neg" }, g);
+    el("text", { x: 337, y: y + 20, "text-anchor": "middle", class: "mono", "font-weight": 600 }, g, t);
+    el("text", { x: 396, y: y + 20, "font-size": 13, fill: pos ? "var(--pos)" : "var(--neg)", "font-weight": 600 }, g, pos ? "label 1: real context from the text" : "label 0: random token");
+  });
+})();
+
+// ---- Section 7: negative table bars
+(function () {
+  const svg = document.getElementById("negBars");
+  const rows = DATA.negTable;
+  const W = 720, H = 300, m = { l: 50, r: 10, t: 14, b: 44 };
+  const maxV = 0.08;
+  const Y = v => H - m.b - v / maxV * (H - m.t - m.b);
+  [0, 0.02, 0.04, 0.06, 0.08].forEach(t => {
+    el("line", { x1: m.l, x2: W - m.r, y1: Y(t), y2: Y(t), class: "grid" }, svg);
+    el("text", { x: m.l - 6, y: Y(t) + 4, "text-anchor": "end", "font-size": 12, class: "muted mono" }, svg, (t * 100) + "%");
+  });
+  const groupW = (W - m.l - m.r) / (rows.length + 0.6);
+  rows.forEach((r, i) => {
+    const gx = m.l + i * groupW + (i >= 8 ? groupW * 0.6 : 0) + 6;
+    const bw = (groupW - 14) / 2;
+    el("rect", { x: gx, y: Y(r.raw), width: bw, height: Y(0) - Y(r.raw), fill: "var(--muted)", "fill-opacity": 0.55, rx: 2 }, svg);
+    el("rect", { x: gx + bw + 2, y: Y(r.p), width: bw, height: Y(0) - Y(r.p), fill: "var(--accent)", rx: 2 }, svg);
+    el("text", { x: gx + bw, y: H - m.b + 17, "text-anchor": "middle", "font-size": 12, class: "mono" }, svg, r.t);
+    el("text", { x: gx + bw, y: H - m.b + 32, "text-anchor": "middle", "font-size": 10, class: "muted mono" }, svg, "×" + r.f);
+  });
+  const sepX = m.l + 8 * groupW + groupW * 0.3 + 6;
+  el("text", { x: sepX, y: Y(0.04), "text-anchor": "middle", class: "muted", "font-size": 16 }, svg, "…");
+  el("text", { x: W - m.r - 4, y: Y(0.07), "text-anchor": "end", "font-size": 12, class: "muted" }, svg, "rarer tokens (bars are tiny, but blue > grey)");
+})();
+
+// ---- Section 8: playground
+(function () {
+  const s = document.getElementById("dotSlider");
+  const fmtS = v => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(4);
+  function upd() {
+    const d = +s.value;
+    const sc = d > 6 ? 1 : d < -6 ? 0 : 1 / (1 + Math.exp(-d));
+    document.getElementById("dotVal").textContent = d.toFixed(2);
+    document.getElementById("rScore").textContent = sc.toFixed(3);
+    document.getElementById("rGradPos").textContent = fmtS(0.025 * (1 - sc));
+    document.getElementById("rGradNeg").textContent = fmtS(0.025 * (0 - sc));
+    document.getElementById("rLossPos").textContent = (-Math.log(sc + 1e-10)).toFixed(3);
+    document.getElementById("rLossNeg").textContent = (-Math.log(1 - sc + 1e-10)).toFixed(3);
+  }
+  s.addEventListener("input", upd); upd();
+})();
+
+// ---- Section 9: loss vs score
+(function () {
+  const xs = [], pos = [], neg = [];
+  for (let p = 0.005; p <= 0.9951; p += 0.005) { xs.push(p); pos.push(-Math.log(p)); neg.push(-Math.log(1 - p)); }
+  lineChart(document.getElementById("lossCurveSvg"), { xMin: 0, xMax: 1, yMin: 0, yMax: 5, xTicks: [0, 0.25, 0.5, 0.75, 1], yTicks: [0, 1, 2, 3, 4, 5], xLabel: "score (model's guess that the pair is real)", yLabel: "loss",
+    series: [{ values: pos, xs, color: "var(--pos)", width: 3 }, { values: neg, xs, color: "var(--neg)", width: 3 }],
+    marks: [{ x: 0.5, y: 0.693, label: "0.693", dx: -8, dy: -10, anchor: "end" }, { x: 0.01, y: 4.605, label: "real pair, score 0.01 → 4.6", dx: 10, dy: 4 }] });
+})();
+
+// ---- Section 9: loss over run
+(function () {
+  const L = DATA.loss;
+  lineChart(document.getElementById("lossRunSvg"), { xMin: 0, xMax: 100, yMin: 0, yMax: 4.5, xTicks: [0, 20, 40, 60, 80, 100], yTicks: [0, 1, 2, 3, 4], xLabel: "epoch", yLabel: "average loss per pair",
+    series: [{ values: L, color: "var(--accent)", width: 2.5 }],
+    marks: [{ x: 0, y: L[0], label: L[0].toFixed(3) + " (≈ 6 × 0.693)", dx: 10, dy: 4 }, { x: 10, y: L[10], label: L[10].toFixed(2), dx: 6, dy: -10 }, { x: 100, y: L[100], label: L[100].toFixed(2), dx: -8, dy: -12, anchor: "end" }] });
+})();
+
+// ---- Section 10: learning rate
+(function () {
+  const v = []; for (let e = 0; e <= 100; e++) v.push(0.025 - (0.025 - 0.001) * e / 100);
+  lineChart(document.getElementById("lrSvg"), { xMin: 0, xMax: 100, yMin: 0, yMax: 0.03, xTicks: [0, 25, 50, 75, 100], yTicks: [0, 0.01, 0.02, 0.03], yFmt: t => t.toFixed(2), xLabel: "epoch (100-epoch run)", yLabel: "learning rate",
+    series: [{ values: v, color: "var(--gold)", width: 3 }],
+    marks: [{ x: 0, y: 0.025, label: "0.025", dx: 10, dy: -6 }, { x: 100, y: 0.001, label: "0.001", dx: -8, dy: -10, anchor: "end" }] });
+})();
+
+// ---- Section 11: scatter panels
+(function () {
+  const groups = { royalty: ["king", "queen", "prince", "princess"], people: ["man", "woman", "boy", "girl"], animals: ["cat", "dog", "kitten", "puppy", "lion", "tiger"], food: ["food", "pizza"] };
+  const gColor = { royalty: "var(--s5)", people: "var(--s1)", animals: "var(--s3)", food: "var(--s2)" };
+  const colorOf = w => { for (const g in groups) if (groups[g].includes(w)) return gColor[g]; };
+  const labels = [["init", "Before training", "random"], ["e0", "After epoch 0", ""], ["e5", "After epoch 5", ""], ["e20", "After epoch 20", ""], ["e50", "After epoch 50", ""], ["e100", "After epoch 100", "final"]];
+  const host = document.getElementById("scatterPanels");
+  labels.forEach(([key, title]) => {
+    const pts = DATA.proj[key];
+    const div = document.createElement("div"); div.className = "panel";
+    div.innerHTML = `<h4>${title}</h4><div class="sub">avg length ${DATA.norms[key].toFixed(2)}</div>`;
+    const svg = el("svg", { viewBox: "0 0 340 250" }, div);
+    const xs = Object.values(pts).map(p => p[0]), ys = Object.values(pts).map(p => p[1]);
+    const ext = Math.max(...xs.map(Math.abs), ...ys.map(Math.abs)) * 1.05;
+    const X = x => 170 + x / ext * 135, Y = y => 125 - y / ext * 105;
+    el("line", { x1: 10, x2: 330, y1: 125, y2: 125, class: "grid" }, svg);
+    el("line", { x1: 170, x2: 170, y1: 10, y2: 240, class: "grid" }, svg);
+    const placed = [];
+    const overlaps = b => placed.some(q => b.x1 < q.x2 && b.x2 > q.x1 && b.y1 < q.y2 && b.y2 > q.y1);
+    const order = DATA.words.slice().sort((a, b) => pts[a][0] - pts[b][0]);
+    for (const w of order) {
+      const cx = X(pts[w][0]), cy = Y(pts[w][1]);
+      el("circle", { cx, cy, r: 4, fill: colorOf(w) }, svg);
+      placed.push({ x1: cx - 4, x2: cx + 4, y1: cy - 4, y2: cy + 4 });
+    }
+    for (const w of order) {
+      const cx = X(pts[w][0]), cy = Y(pts[w][1]);
+      const tw = w.length * 6.2, th = 11;
+      const tries = [[6, -3, "start"], [6, 12, "start"], [-6, -3, "end"], [-6, 12, "end"], [6, -15, "start"], [-6, -15, "end"], [6, 24, "start"], [-6, 24, "end"], [0, -18, "middle"], [0, 30, "middle"]];
+      let chosen = tries[0];
+      for (const t of tries) {
+        const x1 = t[2] === "start" ? cx + t[0] : t[2] === "end" ? cx + t[0] - tw : cx - tw / 2;
+        const b = { x1, x2: x1 + tw, y1: cy + t[1] - th + 2, y2: cy + t[1] + 2 };
+        if (!overlaps(b) && b.x1 > 0 && b.x2 < 340) { chosen = t; placed.push(b); break; }
+      }
+      el("text", { x: cx + chosen[0], y: cy + chosen[1], "font-size": 11, "text-anchor": chosen[2] }, svg, w);
+    }
+    host.appendChild(div);
+  });
+  legend(document.getElementById("scatterLegend"), Object.keys(groups).map(g => [gColor[g], g]));
+})();
+
+// ---- Section 11: similarity trajectories
+(function () {
+  const keys = Object.keys(DATA.sims);
+  const series = keys.map((k, i) => ({ values: DATA.sims[k], color: SERIES[i], width: 2.5 }));
+  lineChart(document.getElementById("simSvg"), { xMin: 0, xMax: 101, yMin: -0.3, yMax: 1.05, xTicks: [0, 20, 40, 60, 80, 100], yTicks: [-0.25, 0, 0.25, 0.5, 0.75, 1], xLabel: "epochs completed (0 = before training)", yLabel: "cosine similarity",
+    series, marks: [{ x: 5, y: 1, label: "everything ≈ 1", dx: 8, dy: 16 }] });
+  legend(document.getElementById("simLegend"), keys.map((k, i) => [SERIES[i], `${k} (final ${DATA.sims[k][DATA.sims[k].length - 1].toFixed(2)})`]));
+})();
+
+// ---- Section 12: random sequences
+(function () {
+  const seqs = { seqA: [0.601104, 0.448291, 0.852466, 0.669734, 0.174814], seqB: [0.601104, 0.448291, 0.852466, 0.669734, 0.174814], seqC: [0.011705, 0.061958, 0.976908, 0.699029, 0.521445] };
+  for (const id in seqs) {
+    const g = document.getElementById(id);
+    seqs[id].forEach((v, i) => {
+      el("rect", { x: i * 108, y: 0, width: 100, height: 26, rx: 5, class: id === "seqC" ? "box-neg" : "box-accent" }, g);
+      el("text", { x: i * 108 + 50, y: 18, "text-anchor": "middle", "font-size": 13, class: "mono" }, g, v.toFixed(6));
+    });
+  }
+})();
+
+// ---- Section 12: seeds
+(function () {
+  const seeds = ["42", "1", "2", "3"];
+  const series = seeds.map((s, i) => ({ values: DATA.seeds[s].loss, color: SERIES[i], width: s === "42" ? 3 : 1.8 }));
+  lineChart(document.getElementById("seedLossSvg"), { xMin: 0, xMax: 100, yMin: 1, yMax: 4.5, xTicks: [0, 20, 40, 60, 80, 100], yTicks: [1, 2, 3, 4], xLabel: "epoch", yLabel: "loss", series });
+  legend(document.getElementById("seedLegend"), seeds.map((s, i) => [SERIES[i], `seed ${s}: final loss ${DATA.seeds[s].loss[100].toFixed(3)}`]));
+  const t = document.getElementById("seedTable");
+  const expect = ["queen", "king", "princess", "puppy", "kitten", "she", "her"];
+  let html = "<thead><tr><th></th>" + seeds.map(s => `<th>seed ${s}</th>`).join("") + "</tr></thead><tbody>";
+  for (const k of ["king/queen", "man/woman", "cat/dog", "man/pizza"]) {
+    html += `<tr><td>${k} similarity</td>` + seeds.map(s => `<td class="num">${DATA.seeds[s].sims[k].toFixed(2)}</td>`).join("") + "</tr>";
+  }
+  DATA.analogyQ.forEach((q, i) => {
+    html += `<tr><td>${q} <span style="color:var(--muted)">(want ${expect[i]})</span></td>` + seeds.map(s => { const r = DATA.seeds[s].an[i]; return `<td class="${r === expect[i] ? "ok" : "bad"}">${r}</td>`; }).join("") + "</tr>";
+  });
+  t.innerHTML = html + "</tbody>";
+})();
+
+// ---- Theme toggle
+(function () {
+  const btn = document.getElementById("themeToggle");
+  const root = document.documentElement;
+  let saved = null;
+  try { saved = localStorage.getItem("sg-theme"); } catch (e) {}
+  if (saved) root.setAttribute("data-theme", saved);
+  const isDark = () => root.getAttribute("data-theme") ? root.getAttribute("data-theme") === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  const label = () => { btn.textContent = isDark() ? "☀ Light" : "☾ Dark"; };
+  label();
+  btn.addEventListener("click", () => {
+    const next = isDark() ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("sg-theme", next); } catch (e) {}
+    label();
+  });
+})();
+</script>
+</body>
+</html>
