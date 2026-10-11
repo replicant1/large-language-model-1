@@ -1,7 +1,9 @@
 from __future__ import annotations
 from typing import Callable, Iterator
+import json
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 from bpe import BPETokenizer, Token, TokenFreqSet, TokenList, Vocabulary
 
@@ -145,6 +147,15 @@ CORPUS = [
   "rain falls from the sky",
   "the tree grows in the forest",
 ];
+
+# Analogies to test after training, as (a, b, c) meaning "a - b + c = ?".
+# For example, king - man + woman should come out close to queen.
+# TODO: stand-in list; replace with ANALOGIES from the original TypeScript
+ANALOGIES: list[tuple[str, str, str]] = [
+  ("king", "man", "woman"),
+  ("prince", "boy", "girl"),
+  ("puppy", "dog", "cat"),
+]
 
 STORIES = [
   ## Royal fairy tales
@@ -692,11 +703,56 @@ class Embed:
                                                               self.get_vector(w_in, query_indices[j])))
                 ))
 
-        # TODO: analogies, once the rest of the TypeScript is ported
+        # Analogies: for each "a - b + c", find the token whose vector is closest to
+        # w_in[a] - w_in[b] + w_in[c], not counting a, b and c themselves
+        analogies: list[Analogy] = []
+        for a, b, c in ANALOGIES:
+            a_index = self.vocabulary.token_to_index.get(Token(a))
+            b_index = self.vocabulary.token_to_index.get(Token(b))
+            c_index = self.vocabulary.token_to_index.get(Token(c))
+            if a_index is None or b_index is None or c_index is None:
+                continue
+
+            # Uses the unrounded weights, as the TypeScript does
+            result_vector = [w_in[a_index].values[d] - w_in[b_index].values[d] + w_in[c_index].values[d]
+                             for d in range(embeded_vector_size)]
+
+            best_index = -1
+            best_score = -math.inf
+            exclude = {a_index, b_index, c_index}
+            for index in range(vocab_size):
+                if index in exclude:
+                    continue
+                score = self.cosine_similarity(result_vector, self.get_vector(w_in, index))
+                if score > best_score:
+                    best_score = score
+                    best_index = index
+
+            if best_index >= 0:
+                analogies.append(Analogy(
+                    query=f"{a} - {b} + {c}",
+                    result=self.vocabulary.token_at(best_index).token,
+                    score=self.round_2(best_score)
+                ))
+
+        # Save the trained model, so it can be used later without retraining
+        saved_model = {
+            "type": "word2vec-skipgram",
+            "dimensions": embeded_vector_size,
+            "vocab": [token.token for token in self.vocabulary.index_to_token],
+            "merges": [{"pair": [rule.pair[0].token, rule.pair[1].token], "merged": rule.merged.token}
+                       for rule in self.tokenizer.merge_rules],
+            "embeddings": {self.vocabulary.token_at(index).token: self.get_vector(w_in, index)
+                           for index in range(vocab_size)},
+        }
+        weights_path = Path(__file__).resolve().parent.parent / ".data" / "embedding-weights.json"
+        weights_path.parent.mkdir(parents=True, exist_ok=True)
+        weights_path.write_text(json.dumps(saved_model, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
         yield TrainEmbedResult(
             embeddings=embeddings,
             neightbors=neighbors,
             similarities=similarities,
-            analogies=[],
+            analogies=analogies,
             warnings=warnings
         )
