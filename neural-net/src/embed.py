@@ -150,11 +150,14 @@ CORPUS = [
 
 # Analogies to test after training, as (a, b, c) meaning "a - b + c = ?".
 # For example, king - man + woman should come out close to queen.
-# TODO: stand-in list; replace with ANALOGIES from the original TypeScript
 ANALOGIES: list[tuple[str, str, str]] = [
   ("king", "man", "woman"),
+  ("queen", "woman", "man"),
   ("prince", "boy", "girl"),
+  ("kitten", "cat", "dog"),
   ("puppy", "dog", "cat"),
+  ("he", "man", "woman"),
+  ("his", "man", "woman"),
 ]
 
 STORIES = [
