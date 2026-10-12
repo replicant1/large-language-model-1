@@ -63,10 +63,8 @@ class NeuralNetBuilder:
             next_layer_neurons = self._neurons_in_layer(layer_index + 1)
             for from_neuron in current_layer_neurons:
                 for to_neuron in next_layer_neurons:
-                    synapse = Synapse(f"{from_neuron.id}_to_{to_neuron.id}")
-                    synapse.from_neuron = from_neuron
-                    synapse.to_neuron = to_neuron
-                    synapse.weight = self.initial_weight
+                    # No need to keep it: creating it adds it to both neurons' synapse lists
+                    Synapse(f"{from_neuron.id}_to_{to_neuron.id}", from_neuron, to_neuron, self.initial_weight)
 
         return NeuralNet(self.neurons, layers)
 

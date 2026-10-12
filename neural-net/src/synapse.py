@@ -3,11 +3,18 @@ from neuron import Neuron
 
 class Synapse:
 	
-	def __init__(self, id: str):
+	# Optionally connects the synapse as it is created:
+	#   Synapse("a_to_b", a, b, 0.5)  is the same as setting from_neuron = a, to_neuron = b, weight = 0.5
+	def __init__(self, id: str, from_neuron: Optional[Neuron] = None, to_neuron: Optional[Neuron] = None,
+				 weight: float = 1.0):
 		self.id = id
 		self._from_neuron = None
 		self._to_neuron = None
-		self._weight = 1.0
+		self._weight = weight
+		if from_neuron is not None:
+			self.from_neuron = from_neuron
+		if to_neuron is not None:
+			self.to_neuron = to_neuron
 		return None
 
 	@property

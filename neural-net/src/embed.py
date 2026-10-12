@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from bpe import BPETokenizer, Token, TokenFreqSet, TokenList, Vocabulary
-from neuron import sigmoid
 from skip_gram_network import SkipGramNetwork
 
 ## Curated training corpus for Word2Vec Skip-gram and transformer training.
@@ -290,47 +289,18 @@ class TrainEmbedResult:
     warnings: list[str]
     
 
-# A vector of numbers with the arithmetic needed to compare embeddings (dot products,
-# for cosine similarity). Training itself stores the weights on the synapses of a
-# SkipGramNetwork; this class is for working with vectors read out of it.
+# How strongly two vectors agree: large and positive when they point the same way,
+# near zero when unrelated, negative when they point in opposite directions.
+# (Adds the products one at a time, in order, rather than using sum(), whose
+# extra-precise float addition in newer Pythons would give slightly different results
+# from the TypeScript.)
 #
-# Unlike the token classes, this is not frozen: add_scaled changes the values in place.
-#
-# Example, vector size 3:
-#
-#   a = EmbeddingVector([1.0, 2.0, 0.5]),  b = EmbeddingVector([0.5, -1.0, 2.0])
-#   a.dot(b)             ->  1.0*0.5 + 2.0*-1.0 + 0.5*2.0 = -0.5
-#   a.add_scaled(b, 0.1) ->  a becomes [1.05, 1.9, 0.7]
-class EmbeddingVector:
-    def __init__(self, values: list[float]):
-        self.values = values
-
-    def size(self) -> int:
-        return len(self.values)
-
-    # How strongly two vectors agree: large and positive when they point the same way,
-    # near zero when unrelated, negative when they point in opposite directions.
-    # (Adds the products one at a time, in order, rather than using sum(), whose
-    # extra-precise float addition in newer Pythons would give slightly different results
-    # from the TypeScript.)
-    def dot(self, other: EmbeddingVector) -> float:
-        result = 0.0
-        for d in range(len(self.values)):
-            result += self.values[d] * other.values[d]
-        return result
-
-    # Moves this vector by factor * other: towards other if factor is positive,
-    # away from it if negative. other is not changed.
-    def add_scaled(self, other: EmbeddingVector, factor: float) -> None:
-        for d in range(len(self.values)):
-            self.values[d] += factor * other.values[d]
-
-    # A separate vector with the same values, so changing one does not change the other
-    def copy(self) -> EmbeddingVector:
-        return EmbeddingVector(list(self.values))
-
-    def __repr__(self) -> str:
-        return f"EmbeddingVector({self.values})"
+# Example:  dot([1.0, 2.0, 0.5], [0.5, -1.0, 2.0])  ->  1.0*0.5 + 2.0*-1.0 + 0.5*2.0 = -0.5
+def dot(a: list[float], b: list[float]) -> float:
+    result = 0.0
+    for d in range(len(a)):
+        result += a[d] * b[d]
+    return result
 
 # Trains word embeddings on CORPUS: learns BPE tokens, builds a fixed vocabulary, then
 # trains a skip-gram model with negative sampling (see train_skip_gram).
@@ -356,11 +326,6 @@ class Embed:
             return ((t ^ (t >> 14)) & MASK) / 4294967296
 
         return next_random
-
-    # An "activation function" - decides how strongly a neuron fires.
-    # squashes input into the range 0 to 1 (see neuron.sigmoid, which the network's output neurons use)
-    def sigmoid(self, x: float) -> float:
-        return sigmoid(x)
 
     # Builds the skip-gram training pairs: (target, context) vocabulary indices.
     # Every token is paired with every other token within window_size positions of it in
@@ -525,29 +490,27 @@ class Embed:
 
         return total_loss / len(pairs)
 
-    # Rounds to 6 decimal places, rounding halves up like JavaScript's Math.round.
-    # (Python's round() rounds halves to the nearest even digit instead.)
-    def round_6(self, value: float) -> float:
-        return math.floor(value * 1000000 + 0.5) / 1000000
-
-    # Rounds to 2 decimal places, rounding halves up like JavaScript's Math.round (see round_6)
-    def round_2(self, value: float) -> float:
-        return math.floor(value * 100 + 0.5) / 100
+    # Rounds to the given number of decimal places, rounding halves up like JavaScript's
+    # Math.round(value * 10**places) / 10**places. (Python's round() rounds halves to the
+    # nearest even digit instead.)
+    #
+    # Example:  round_like_js(0.0000005, 6) -> 0.000001,  round_like_js(0.125, 2) -> 0.13
+    def round_like_js(self, value: float, places: int) -> float:
+        factor = 10 ** places
+        return math.floor(value * factor + 0.5) / factor
 
     # How closely two vectors point the same way, ignoring their lengths:
     # 1 for the same direction, 0 for unrelated, -1 for opposite.
     # Returns 0 if either vector is all zeros, since it then has no direction.
     def cosine_similarity(self, a: list[float], b: list[float]) -> float:
-        vector_a = EmbeddingVector(a)
-        vector_b = EmbeddingVector(b)
-        length_product = math.sqrt(vector_a.dot(vector_a)) * math.sqrt(vector_b.dot(vector_b))
+        length_product = math.sqrt(dot(a, a)) * math.sqrt(dot(b, b))
         if length_product == 0:
             return 0.0
-        return vector_a.dot(vector_b) / length_product
+        return dot(a, b) / length_product
 
     # A word's embedding as a plain list, rounded to 6 decimal places
     def get_vector(self, network: SkipGramNetwork, word_index: int) -> list[float]:
-        return [self.round_6(value) for value in network.embedding(word_index)]
+        return [self.round_like_js(value, 6) for value in network.embedding(word_index)]
 
     # Looks up each query word in the vocabulary. Returns the indexes of words that are
     # single BPE tokens, plus a warning for each word that splits into several tokens.
@@ -609,7 +572,7 @@ class Embed:
             lr = self.learning_rate(epoch, epochs, lr_start, lr_end)
             loss = self.train_epoch(positive_pairs, network, negative_samples, negative_sampling_table, rand, lr)
             if epoch % step == 0 or epoch == epochs:
-                yield EpochResult(epoch=epoch, loss=self.round_6(loss))
+                yield EpochResult(epoch=epoch, loss=self.round_like_js(loss, 6))
 
         # Report on the query words that are single tokens; the rest only get a warning
         query_indices, warnings = self.find_query_indices(words)
@@ -627,7 +590,7 @@ class Embed:
                     continue
                 scores.append(NeighborScore(
                     word=self.vocabulary.token_at(index).token,
-                    score=self.round_2(self.cosine_similarity(query_vector, self.get_vector(network, index)))
+                    score=self.round_like_js(self.cosine_similarity(query_vector, self.get_vector(network, index)), 2)
                 ))
             # sort() is stable, like JavaScript's, so tied scores keep vocabulary order
             scores.sort(key=lambda neighbor_score: neighbor_score.score, reverse=True)
@@ -640,8 +603,8 @@ class Embed:
                 similarities.append(SimilarityPair(
                     a=self.vocabulary.token_at(query_indices[i]).token,
                     b=self.vocabulary.token_at(query_indices[j]).token,
-                    score=self.round_2(self.cosine_similarity(self.get_vector(network, query_indices[i]),
-                                                              self.get_vector(network, query_indices[j])))
+                    score=self.round_like_js(self.cosine_similarity(self.get_vector(network, query_indices[i]),
+                                                                    self.get_vector(network, query_indices[j])), 2)
                 ))
 
         # Analogies: for each "a - b + c", find the token whose vector is closest to
@@ -673,7 +636,7 @@ class Embed:
                 analogies.append(Analogy(
                     query=f"{a} - {b} + {c}",
                     result=self.vocabulary.token_at(best_index).token,
-                    score=self.round_2(best_score)
+                    score=self.round_like_js(best_score, 2)
                 ))
 
         # Save the trained model, so it can be used later without retraining

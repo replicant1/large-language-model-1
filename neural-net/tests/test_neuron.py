@@ -3,13 +3,6 @@ from neuron import Neuron, identity, sigmoid
 from synapse import Synapse
 
 
-def connect(from_neuron: Neuron, to_neuron: Neuron, weight: float) -> Synapse:
-    synapse = Synapse(f"{from_neuron.id}_to_{to_neuron.id}")
-    synapse.from_neuron = from_neuron
-    synapse.to_neuron = to_neuron
-    synapse.weight = weight
-    return synapse
-
 class TestNeuron(unittest.TestCase):
     def test_create_neuron_non_empty_id(self):
         neuron = Neuron("test_neuron")
@@ -47,20 +40,37 @@ class TestNeuron(unittest.TestCase):
     def test_forward_example_from_comment(self):
         a, b, out = Neuron("a"), Neuron("b"), Neuron("out")
         a.value, b.value = 2.0, 3.0
-        connect(a, out, 0.5)
-        connect(b, out, -1.0)
+        Synapse("a_to_out", a, out, 0.5)
+        Synapse("b_to_out", b, out, -1.0)
         self.assertEqual(-2.0, out.forward())
         self.assertEqual(-2.0, out.value)
 
     def test_forward_applies_the_activation(self):
         a, out = Neuron("a"), Neuron("out", sigmoid)
         a.value = 1.0
-        connect(a, out, 0.5)
+        Synapse("a_to_out", a, out, 0.5)
         self.assertAlmostEqual(1 / (1 + 2.718281828459045 ** -0.5), out.forward())
 
     def test_forward_with_no_inputs_is_activation_of_zero(self):
         self.assertEqual(0.0, Neuron("n").forward())
         self.assertEqual(0.5, Neuron("n", sigmoid).forward())
+
+
+class TestSynapseConstructor(unittest.TestCase):
+    def test_connects_and_sets_weight(self):
+        a, b = Neuron("a"), Neuron("b")
+        synapse = Synapse("a_to_b", a, b, 0.5)
+        self.assertIs(a, synapse.from_neuron)
+        self.assertIs(b, synapse.to_neuron)
+        self.assertEqual(0.5, synapse.weight)
+        self.assertEqual([synapse], a.synapses_out)
+        self.assertEqual([synapse], b.synapses_in)
+
+    def test_id_only_leaves_it_unconnected_with_weight_one(self):
+        synapse = Synapse("s")
+        self.assertIsNone(synapse.from_neuron)
+        self.assertIsNone(synapse.to_neuron)
+        self.assertEqual(1.0, synapse.weight)
 
 
 class TestActivations(unittest.TestCase):

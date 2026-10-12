@@ -7,7 +7,7 @@ from bpe import TokenFreq
 from bpe import TokenFreqSet
 from bpe import Vocabulary
 from embed import Embed
-from embed import EmbeddingVector
+from embed import dot
 from embed import TrainingOptions
 from embed import InitResult
 from embed import EpochResult
@@ -25,39 +25,14 @@ def setUpModule():
         EMBED = Embed()
 
 
-class TestEmbeddingVector(unittest.TestCase):
-    def test_size(self):
-        self.assertEqual(3, EmbeddingVector([1.0, 2.0, 0.5]).size())
+class TestDot(unittest.TestCase):
+    def test_example_from_comment(self):
+        self.assertAlmostEqual(-0.5, dot([1.0, 2.0, 0.5], [0.5, -1.0, 2.0]))
 
-    def test_dot_example_from_comment(self):
-        a = EmbeddingVector([1.0, 2.0, 0.5])
-        b = EmbeddingVector([0.5, -1.0, 2.0])
-        self.assertAlmostEqual(-0.5, a.dot(b))
-
-    def test_dot_is_symmetric(self):
-        a = EmbeddingVector([0.3, -0.7, 1.1])
-        b = EmbeddingVector([2.0, 0.4, -0.2])
-        self.assertEqual(a.dot(b), b.dot(a))
-
-    def test_add_scaled_example_from_comment(self):
-        a = EmbeddingVector([1.0, 2.0, 0.5])
-        b = EmbeddingVector([0.5, -1.0, 2.0])
-        a.add_scaled(b, 0.1)
-        for expected, actual in zip([1.05, 1.9, 0.7], a.values):
-            self.assertAlmostEqual(expected, actual)
-        self.assertEqual([0.5, -1.0, 2.0], b.values)
-
-    def test_add_scaled_with_negative_factor_moves_away(self):
-        a = EmbeddingVector([1.0, 1.0])
-        a.add_scaled(EmbeddingVector([2.0, 4.0]), -0.5)
-        self.assertEqual([0.0, -1.0], a.values)
-
-    def test_copy_is_independent(self):
-        a = EmbeddingVector([1.0, 2.0])
-        b = a.copy()
-        b.add_scaled(EmbeddingVector([1.0, 1.0]), 1.0)
-        self.assertEqual([1.0, 2.0], a.values)
-        self.assertEqual([2.0, 3.0], b.values)
+    def test_is_symmetric(self):
+        a = [0.3, -0.7, 1.1]
+        b = [2.0, 0.4, -0.2]
+        self.assertEqual(dot(a, b), dot(b, a))
 
 
 class TestBuildTrainingPairs(unittest.TestCase):
@@ -241,14 +216,19 @@ class TestTrainEpoch(unittest.TestCase):
         self.assertAlmostEqual(math.log(2), loss)
 
 
-class TestRound6(unittest.TestCase):
+class TestRoundLikeJs(unittest.TestCase):
     def test_rounds_to_six_places(self):
-        self.assertEqual(2.130895, EMBED.round_6(2.1308954))
-        self.assertEqual(2.130896, EMBED.round_6(2.1308956))
+        self.assertEqual(2.130895, EMBED.round_like_js(2.1308954, 6))
+        self.assertEqual(2.130896, EMBED.round_like_js(2.1308956, 6))
+
+    def test_rounds_to_two_places(self):
+        self.assertEqual(0.96, EMBED.round_like_js(0.9642, 2))
+        self.assertEqual(-0.24, EMBED.round_like_js(-0.2422, 2))
 
     def test_halves_round_up_like_javascript(self):
         # Python's round(0.5) is 0 (round half to even); Math.round(0.5) is 1
-        self.assertEqual(0.000001, EMBED.round_6(0.0000005))
+        self.assertEqual(0.000001, EMBED.round_like_js(0.0000005, 6))
+        self.assertEqual(0.13, EMBED.round_like_js(0.125, 2))
 
 
 class TestTrainSkipGram(unittest.TestCase):

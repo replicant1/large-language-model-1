@@ -1,6 +1,7 @@
 import unittest
 import math
 from neuron import sigmoid
+from embed import dot
 from skip_gram_network import SkipGramNetwork
 
 
@@ -12,9 +13,6 @@ def network_with(embeddings: list[list[float]], context_vectors: list[list[float
         network.set_context_vector(token, context_vector)
     return network
 
-
-def dot(a: list[float], b: list[float]) -> float:
-    return sum(x * y for x, y in zip(a, b))
 
 
 class TestStructure(unittest.TestCase):
