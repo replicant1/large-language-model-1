@@ -383,9 +383,10 @@ sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span clas
 <h3 id="target-vs-context">Target vs context: two roles, two vectors</h3>
 <div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L382-L384" target="_blank" rel="noopener"><span class="src-name">indices[i] is the target, indices[j] the context</span><span class="src-loc">embed.py lines 382–384</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L550-L551" target="_blank" rel="noopener"><span class="src-name">target uses w_in, context uses w_out</span><span class="src-loc">embed.py lines 550–551</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L583-L586" target="_blank" rel="noopener"><span class="src-name">negatives replace the context</span><span class="src-loc">embed.py lines 583–586</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L610-L612" target="_blank" rel="noopener"><span class="src-name">only w_in is kept</span><span class="src-loc">embed.py lines 610–612</span></a></div>
 
-<p>"Target" and "context" are <strong>roles in a pair</strong>, not kinds of token. The <strong>target</strong> is the token at the centre of the window, the one being asked about. The <strong>context</strong> is one of its neighbours within <code>window_size</code>. Each pair asks: <em>"Given this target, is this a token that appears around it?"</em> That's where the name comes from: skip-gram predicts the surrounding words from the centre word. (Its sister method, CBOW, does the reverse.)</p>
+<p>"Target" and "context" are <strong>roles in a pair</strong>, not kinds of token. The <strong>target</strong> is the token at the centre of the window, the one being asked about. The <strong>context</strong> is one of its neighbours within <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L382-L384" target="_blank" rel="noopener"><code>window_size</code></a>. Each pair asks: <em>"Given this target, is this a token that appears around it?"</em> That's where the name comes from: skip-gram predicts the surrounding words from the centre word. (Its sister method, CBOW, does the reverse.)</p>
 
 <h3 id="two-relations">The linguistic rationale: words relate in two ways</h3>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L553" target="_blank" rel="noopener"><span class="src-name">w_in · w_out: the training score</span><span class="src-loc">embed.py line 553</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L682-L696" target="_blank" rel="noopener"><span class="src-name">w_in vs w_in: nearest neighbours</span><span class="src-loc">embed.py lines 682–696</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L698-L707" target="_blank" rel="noopener"><span class="src-name">w_in vs w_in: similarities</span><span class="src-loc">embed.py lines 698–707</span></a></div>
 
 <p>Why give every token two vectors in the first place? Because <strong>words relate to each other in two different ways</strong>, and the two vectors give the model a separate place to learn each one. Linguists have distinguished these two relations since Ferdinand de Saussure, over a century ago:</p>
 
@@ -397,14 +398,15 @@ sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span clas
 <table>
 <thead><tr><th>Relation</th><th>Question it answers</th><th>Example</th><th>Learned by</th></tr></thead>
 <tbody>
-<tr><td><strong>Syntagmatic</strong> (combination)</td><td>Which words go <em>next to</em> this word?</td><td>king → <em>crowned</em>, <em>was</em>, <em>became</em></td><td><code>w_in[king] · w_out[x]</code></td></tr>
-<tr><td><strong>Paradigmatic</strong> (substitution)</td><td>Which words could <em>replace</em> this word?</td><td>king → <em>queen</em>, <em>prince</em></td><td><code>w_in[king] · w_in[x]</code></td></tr>
+<tr><td><strong>Syntagmatic</strong> (combination)</td><td>Which words go <em>next to</em> this word?</td><td>king → <em>crowned</em>, <em>was</em>, <em>became</em></td><td><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L553" target="_blank" rel="noopener"><code>w_in[king] · w_out[x]</code></a></td></tr>
+<tr><td><strong>Paradigmatic</strong> (substitution)</td><td>Which words could <em>replace</em> this word?</td><td>king → <em>queen</em>, <em>prince</em></td><td><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L692" target="_blank" rel="noopener"><code>w_in[king] · w_in[x]</code></a></td></tr>
 </tbody>
 </table>
 
 <p>Crucially, <strong>the two relations point to different words.</strong> The words that are similar to "cat" (dog, mouse) are mostly <em>not</em> the words that appear next to "cat" (the, sat, chased). A word is almost never next to its substitutes (you don't say "the cat dog sat"), and almost never a substitute for its neighbours ("the" can't replace "cat").</p>
 
 <h3>Why that forces two vectors</h3>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L484-L485" target="_blank" rel="noopener"><span class="src-name">two separate tables created</span><span class="src-loc">embed.py lines 484–485</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L490-L493" target="_blank" rel="noopener"><span class="src-name">filled with separate random values</span><span class="src-loc">embed.py lines 490–493</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L550-L551" target="_blank" rel="noopener"><span class="src-name">target from w_in, context from w_out</span><span class="src-loc">embed.py lines 550–551</span></a></div>
 <p>Suppose each token had only one vector, and the score were <code>sigmoid(v_cat · v_x)</code>. Training would have to make <code>v_cat · v_the</code> large, because "the" appears next to "cat" constantly. But that same dot product is also what we'd use to measure similarity, so "cat" would come out <em>similar</em> to "the". A single vector per word can't keep "goes next to" separate from "is like". It mixes the two relations up.</p>
 <p>With two tables, the jobs are split:</p>
 <ul>
@@ -413,25 +415,46 @@ sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span clas
 </ul>
 
 <h3>Your trained model shows the split</h3>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L682-L696" target="_blank" rel="noopener"><span class="src-name">neighbours: w_in against w_in</span><span class="src-loc">embed.py lines 682–696</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L599-L608" target="_blank" rel="noopener"><span class="src-name">cosine_similarity</span><span class="src-loc">embed.py lines 599–608</span></a></div>
 <p>After the 100-epoch run (seed 42), here are the tokens closest to "king", measured both ways:</p>
 <div class="table-wrap">
 <table>
 <thead><tr><th>Compared with</th><th>Closest tokens</th><th>What they are</th></tr></thead>
 <tbody>
 <tr><td><code>w_in</code> (other target vectors)</td><td class="num">queen 0.96, boy 0.84, girl 0.84, prince 0.83</td><td>words that fill king's slot (paradigmatic)</td></tr>
-<tr><td><code>w_out</code> (context vectors)</td><td class="num">was, of, became, become, crowned, will</td><td>king's actual neighbours in <code>CORPUS</code> (syntagmatic)</td></tr>
+<tr><td><code>w_out</code> (context vectors)</td><td class="num">was, of, became, become, crowned, will</td><td>king's actual neighbours in <code>CORPUS</code> (syntagmatic). The code doesn't compute this list; it was computed separately for this page.</td></tr>
 </tbody>
 </table>
 </div>
 <p>The second list matches real sentences: "the man <strong>was crowned</strong> king", "the prince <strong>will become</strong> king", "king <strong>of</strong> the land". One word gives two different, linguistically sensible lists, one from each relation.</p>
 
 <h3>The deeper root: the distributional hypothesis</h3>
-<p>Why train on the syntagmatic relation at all, when the paradigmatic one is what we want? Because of the <strong>distributional hypothesis</strong> (Harris, 1954; Firth, 1957: "you shall know a word by the company it keeps"). Words that can substitute for each other tend to keep the same company, so substitutability can be <em>discovered</em> by observing co-occurrence. Co-occurrence is directly visible in text; substitutability isn't.</p>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L644-L645" target="_blank" rel="noopener"><span class="src-name">co-occurrence: pairs from CORPUS</span><span class="src-loc">embed.py lines 644–645</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L382-L384" target="_blank" rel="noopener"><span class="src-name">the window that defines a neighbour</span><span class="src-loc">embed.py lines 382–384</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><span class="src-name">rows (w_in) and columns (w_out)</span><span class="src-loc">embed.py lines 482–494</span></a></div>
+<p>Why train on the syntagmatic relation at all, when the paradigmatic one is what we want? Because one can be measured from text and the other can't, and the first turns out to reveal the second.</p>
+
+<ul>
+<li><strong>Co-occurrence can be counted.</strong> "Does <em>crowned</em> appear within 2 tokens of <em>king</em>?" is a question you can answer by scanning the sentences and counting. The answer is written in the text.</li>
+<li><strong>Substitutability can't be counted.</strong> "Could <em>queen</em> replace <em>king</em> and the sentence still make sense?" is a question about sentences that <em>might</em> exist, not ones that do. No sentence in the corpus says "king and queen are interchangeable". You'd have to try swapping words and judge whether the result is natural, which needs a speaker of the language.</li>
+</ul>
+
+<p>The bridge between them is the <strong>distributional hypothesis</strong> (Harris, 1954; Firth, 1957: "you shall know a word by the company it keeps"). Words that could replace each other tend to turn up with the <em>same neighbours</em>. So you can estimate the thing you can't count by comparing the thing you can: list each word's neighbours, then see how much the lists overlap. Here are the real neighbours (window 2) in your <code>CORPUS</code>:</p>
+
+<table>
+<thead><tr><th>Word</th><th>Some of its neighbours</th><th>Shared with king</th></tr></thead>
+<tbody>
+<tr><td><code>king</code></td><td>was, crowned, became, become, will, sits, wore, …</td><td></td></tr>
+<tr><td><code>queen</code></td><td>was, crowned, became, become, will, sits, wore, …</td><td class="ok">7 meaningful words, plus common ones like "the" and "of"</td></tr>
+<tr><td><code>pizza</code></td><td>ate, for, dinner, pasta, and, …</td><td class="bad">only "and"</td></tr>
+</tbody>
+</table>
+
+<p>The overlap gives the answer: <em>queen</em> shares most of king's company, so it can probably stand in for king; <em>pizza</em> shares almost none, so it probably can't. Skip-gram does this comparison implicitly. It never lists or compares neighbours; instead, words with overlapping neighbour lists get pulled towards the same context vectors, so their target vectors end up close together.</p>
 <p>This makes every word play two parts: <strong>something to be described</strong> (by its company) and <strong>part of the description</strong> of other words. Distributional semantics has always drawn this as a word × context table, with words being described as rows and the contexts describing them as columns. The two vectors are those two roles: <code>w_in</code> holds each word's row vector and <code>w_out</code> its column vector. Contexts don't even have to be words. Some variants use grammatical relations or whole documents, which makes clear that "being a word" and "being a context" are different jobs.</p>
 
 <p class="muted" style="font-size:0.92rem"><em>A historical footnote:</em> word2vec didn't start from this linguistic argument. Its two matrices came from its neural-network design: an input layer (word → hidden) and an output layer (hidden → predicted word), each with its own weights. The explanation in terms of the word × context table came afterwards, notably from Levy and Goldberg (2014). Still, the reason it works matches the linguistic distinction, and so does the reason the two tables must stay separate.</p>
 
 <h3>The mechanics</h3>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L367-L385" target="_blank" rel="noopener"><span class="src-name">build_training_pairs</span><span class="src-loc">embed.py lines 367–385</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L550-L551" target="_blank" rel="noopener"><span class="src-name">train_pair reads both tables</span><span class="src-loc">embed.py lines 550–551</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L582-L586" target="_blank" rel="noopener"><span class="src-name">negatives fill the context slot</span><span class="src-loc">embed.py lines 582–586</span></a></div>
 <p><strong>Every token plays both roles.</strong> In "the cat sat" with window 1, <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L367-L385" target="_blank" rel="noopener"><code>build_training_pairs</code></a> makes each token the target in turn:</p>
 <table>
 <thead><tr><th>Target (centre)</th><th>Contexts (neighbours)</th><th>Pairs</th></tr></thead>
@@ -446,9 +469,11 @@ sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span clas
 <p><strong>Each role uses a different table.</strong> In <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L524-L562" target="_blank" rel="noopener"><code>train_pair</code></a>, the target's vector comes from <code>w_in</code> and the context's from <code>w_out</code>:</p>
 <pre>target_vector = w_in[target]     <span class="c"># the target's "target vector"</span>
 other_vector  = w_out[other]     <span class="c"># the context's "context vector"</span></pre>
+<div class="pre-src"><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L550-L551" target="_blank" rel="noopener"><span class="src-name">train_pair</span><span class="src-loc">embed.py lines 550–551</span></a></div>
 <p>So every token has two vectors, one for each role. Negative samples always replace the <em>context</em>, never the target: "cat" stays the target and random tokens are tried in the context slot.</p>
 
 <h3>Why two vectors per token?</h3>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L553" target="_blank" rel="noopener"><span class="src-name">the score: a dot product</span><span class="src-loc">embed.py line 553</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L557" target="_blank" rel="noopener"><span class="src-name">w_in pulled towards w_out</span><span class="src-loc">embed.py line 557</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L558" target="_blank" rel="noopener"><span class="src-name">w_out pulled towards w_in</span><span class="src-loc">embed.py line 558</span></a></div>
 <p><strong>1. A vector always agrees with itself.</strong> With a single table, the score for (cat, cat) would be <code>sigmoid(v_cat · v_cat)</code>, which is always high, because a vector points the same way as itself. The model would believe every word appears next to itself, which is rarely true. With separate tables, <code>w_in[cat]</code> and <code>w_out[cat]</code> are free to differ.</p>
 
 <p><strong>2. This is how similar words become similar.</strong> In your corpus, "king" and "queen" appear in the same window only once ("the king and queen rule the kingdom"). But they appear in parallel sentences, such as "the king wore a golden crown" and "the queen wore a silver crown", so as targets they share many of the same contexts: <code>sits</code>, <code>wore</code>, <code>crowned</code>, <code>became</code>, <code>will</code>, and more. Training keeps pulling <code>w_in[king]</code> towards those context vectors in <code>w_out</code>, and does exactly the same to <code>w_in[queen]</code>. Because both are pulled towards the same points, they end up near each other.</p>
@@ -837,6 +862,44 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 </tbody>
 </table>
 
+<h3 id="why-this-question">Why this question?</h3>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L382-L384" target="_blank" rel="noopener"><span class="src-name">real neighbours: the sliding window</span><span class="src-loc">embed.py lines 382–384</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L423-L439" target="_blank" rel="noopener"><span class="src-name">random tokens: the noise distribution</span><span class="src-loc">embed.py lines 423–439</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L582-L586" target="_blank" rel="noopener"><span class="src-name">k = negative_samples per real pair</span><span class="src-loc">embed.py lines 582–586</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L553" target="_blank" rel="noopener"><span class="src-name">the guess: one dot product</span><span class="src-loc">embed.py line 553</span></a></div>
+
+<p>Of all the questions the model could be trained to answer, why this one? Not because it's interesting in itself: nobody needs a "real neighbour or random token?" detector. The reason runs in three steps, starting from what we actually want.</p>
+
+<p><strong>1. What we want is vectors that capture meaning, so meaning has to be defined.</strong> Meaning can't be observed directly; we need a stand-in that can be measured from text. The distributional hypothesis (section 5) supplies one: <em>a word's meaning is characterised by which words tend to appear near it.</em> In probability terms, the meaning of a word <em>w</em> is its <strong>neighbour distribution</strong>: for every token <em>c</em>, how likely is <em>c</em> to appear near <em>w</em>? Statisticians write this P(c | w). Under that definition, two words mean similar things exactly when their neighbour distributions are similar: king and queen have nearly the same one, king and pizza very different ones. So "learn the meaning of each word" becomes, concretely, <strong>"learn each word's neighbour distribution"</strong>.</p>
+
+<p><strong>2. Force that distribution through small vectors, and similarity appears.</strong> Written out in full, the neighbour distributions form a table: 286 words × 286 possible neighbours, about 82,000 probabilities. By design, the model has no place to keep that table: its only adjustable numbers are the two vector tables, <code>w_in</code> and <code>w_out</code> (all that <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>init_weights</code></a> creates). So it has to produce every entry from a dot product of two 32-number vectors, <code>w_in[w] · w_out[c]</code>, squeezing about 82,000 numbers into about 18,000. This isn't about storage: for 286 tokens the full table would fit easily. (At real scale it would matter: a 100,000-word vocabulary gives a table of 10 billion entries.) The restriction is deliberate, because a model that could store the table would just memorise each word's row separately, and nothing would ever reveal that king's row and queen's row are alike. That squeeze is where embeddings come from. Words with similar rows in the table (similar neighbour distributions) can only be represented cheaply by giving them similar <code>w_in</code> vectors. There's no room to memorise each word separately, so the model has to find the shared structure.</p>
+
+<p><strong>3. "Real neighbour, or random token?" is the cheapest question whose best answer <em>is</em> that distribution.</strong> There are several ways to train a model to learn P(c | w):</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Question to train on</th><th>What its best answer estimates</th><th>Drawback</th></tr></thead>
+<tbody>
+<tr><td>"Which of all 286 tokens is the neighbour?" (full softmax)</td><td>P(c | w) directly</td><td class="bad">286 dot products per pair: too slow at scale</td></tr>
+<tr><td>"How often do <em>w</em> and <em>c</em> co-occur?" (GloVe)</td><td>the log of the co-occurrence count</td><td class="bad">needs the whole vocab × vocab table built first</td></tr>
+<tr><td><strong>"Real neighbour, or random token?"</strong> (your code)</td><td><strong>P(c | w), compared with chance</strong></td><td class="ok">one dot product per guess</td></tr>
+</tbody>
+</table>
+</div>
+<p>The last row rests on a mathematical fact: if a model learns to tell real neighbours apart from random tokens drawn from a known noise distribution, its best possible score isn't arbitrary. It's a fixed function of the neighbour distribution itself. A perfectly trained yes/no classifier has learned <strong>how much more likely <em>c</em> is to appear near <em>w</em> than chance would predict</strong>.</p>
+
+<div class="callout pos"><p><strong>In one sentence:</strong> under the distributional hypothesis, a word's meaning <em>is</em> its neighbour distribution, and "is <em>c</em> a real neighbour of <em>w</em>, or a random token?" is the cheapest question whose best answer recovers that distribution (relative to chance).</p></div>
+
+<p>So the question isn't special in itself; the quantity behind it is: <em>how likely is c to appear near w, compared with chance?</em> Any question whose best answer is that quantity would do; full softmax and GloVe are other routes to roughly the same place. Skip-gram picks the yes/no version because it costs one dot product per guess, needs no table built first, and can stream through any amount of text. Other useful properties follow from the choice: the right answers come free from raw text, and a graded probability tells the model how wrong it was, and so how far to move.</p>
+
+<details class="deeper">
+<summary>The maths: what the best possible score is<span class="tag">Going deeper</span></summary>
+<div class="body">
+<p style="margin-top:14px">For a target <em>w</em> and candidate <em>c</em>, real neighbours come from P(c | w), and each real pair is accompanied by <em>k</em> random tokens drawn from the noise distribution P<sub>noise</sub>(c). In your code, <em>k</em> = 5 and P<sub>noise</sub> is frequency<sup>0.75</sup>, normalised (section 7). Given a pair, the probability that it's a real one is</p>
+<pre>best score = P(c | w) / ( P(c | w) + k · P<sub>noise</sub>(c) )</pre>
+<p>The score depends only on how P(c | w) compares with k · P<sub>noise</sub>(c): it's above 0.5 exactly when <em>c</em> is more likely as a real neighbour than as a noise draw. Since the score is <code>sigmoid(dot)</code>, the best dot product works out to</p>
+<pre>best dot = log( P(c | w) / P<sub>noise</sub>(c) ) − log k</pre>
+<p>That's a log ratio: how much more often <em>c</em> appears near <em>w</em> than the noise distribution would produce it, minus a constant. This idea is called <em>noise-contrastive estimation</em> (Gutmann and Hyvärinen, 2010). Negative sampling is a simplified form of it (Mikolov et al., 2013). Levy and Goldberg (2014) showed that with the noise distribution set to plain word frequency, the best dot product is exactly the <em>pointwise mutual information</em> of <em>w</em> and <em>c</em>, minus log k.</p>
+<p>In practice the model can't reach the best score for every pair, because 32-number vectors can't represent all 82,000 values independently (step 2). That limitation is the point: it forces words with similar neighbour distributions to share similar vectors.</p>
+</div>
+</details>
+
 <h3>Then: what loss measures</h3>
 <p><strong>Loss is −log of the probability the model gave to the correct answer.</strong> 0 means the model was certain and right; bigger means worse. For each guess, <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L560-L562" target="_blank" rel="noopener"><code>train_pair</code></a> returns:</p>
 <ul>
@@ -881,7 +944,7 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 
 <p>The loss never gets to 0, and it can't. A token like "the" appears next to almost everything, so some "fake" pairs are perfectly plausible, and the model can't score them all perfectly.</p>
 
-<div class="callout pos"><p><strong>The twist: getting the guesses right isn't the real goal.</strong> Nobody actually needs a "real neighbour or random token?" detector. It's a <em>proxy task</em>, chosen because the only way to get good at it is to give words with similar neighbours similar vectors. The embeddings are a by-product of learning to guess well. That's why loss tells you whether training is working, but not how good the embeddings are. For that, look at neighbours, similarities and analogies.</p></div>
+<div class="callout pos"><p><strong>Remember: getting the guesses right isn't the end goal.</strong> The guessing is a means of learning each word's neighbour distribution through small vectors (see <a href="#why-this-question">Why this question?</a>). That's why loss tells you whether training is working, but not how good the embeddings are. For that, look at neighbours, similarities and analogies.</p></div>
 
 <!-- ============================================================ -->
 <h2 id="epochs">10. Epochs and the learning rate</h2>
