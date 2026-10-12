@@ -11,6 +11,7 @@ from embed import EmbeddingVector
 from embed import TrainingOptions
 from embed import InitResult
 from embed import EpochResult
+from embed import TrainEmbedResult
 
 # One Embed shared by all the tests below: creating it trains the BPE tokenizer on the
 # corpus, which is slow and prints a lot, so it is done once and its output hidden.
@@ -306,10 +307,12 @@ class TestTrainSkipGram(unittest.TestCase):
             results = list(Embed().train_skip_gram(TrainingOptions([], 3, 4, 2, 2)))
         self.assertIsInstance(results[0], InitResult)
         self.assertEqual(4, results[0].embeddingDim)
-        self.assertEqual([0, 1, 2, 3], [result.epoch for result in results[1:]])
-        for result in results[1:]:
+        epoch_results = results[1:-1]
+        self.assertEqual([0, 1, 2, 3], [result.epoch for result in epoch_results])
+        for result in epoch_results:
             self.assertIsInstance(result, EpochResult)
-        self.assertLess(results[-1].loss, results[1].loss)
+        self.assertLess(epoch_results[-1].loss, epoch_results[0].loss)
+        self.assertIsInstance(results[-1], TrainEmbedResult)
 
     def test_matches_typescript_losses(self):
         # Reference losses from running the TypeScript training loop on the same pairs
@@ -318,7 +321,7 @@ class TestTrainSkipGram(unittest.TestCase):
             results = list(Embed().train_skip_gram(TrainingOptions([], 10, 8, 2, 3)))
         self.assertEqual(
             [2.75102, 2.748616, 2.709061, 2.584951, 2.433389, 2.324782, 2.24623, 2.192255, 2.158386, 2.149308, 2.130895],
-            [result.loss for result in results[1:]])
+            [result.loss for result in results[1:-1]])
 
 
 if __name__ == "__main__":
