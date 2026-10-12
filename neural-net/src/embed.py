@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from bpe import BPETokenizer, Token, TokenFreqSet, TokenList, Vocabulary
+from neuron import sigmoid
+from skip_gram_network import SkipGramNetwork
 
 ## Curated training corpus for Word2Vec Skip-gram and transformer training.
 ##
@@ -288,11 +290,11 @@ class TrainEmbedResult:
     warnings: list[str]
     
 
-# One token's vector of weights: a fixed number of values (the vector size) that are
-# adjusted during training. Tokens used in similar contexts end up with vectors that
-# point in similar directions.
+# A vector of numbers with the arithmetic needed to compare embeddings (dot products,
+# for cosine similarity). Training itself stores the weights on the synapses of a
+# SkipGramNetwork; this class is for working with vectors read out of it.
 #
-# Unlike the token classes, this is not frozen: training changes the values in place.
+# Unlike the token classes, this is not frozen: add_scaled changes the values in place.
 #
 # Example, vector size 3:
 #
@@ -356,13 +358,9 @@ class Embed:
         return next_random
 
     # An "activation function" - decides how strongly a neuron fires.
-    # squashes input into the range 0 to 1
+    # squashes input into the range 0 to 1 (see neuron.sigmoid, which the network's output neurons use)
     def sigmoid(self, x: float) -> float:
-        if x > 6:
-            return 1.0
-        if x < -6:
-            return 0.0
-        return 1 / (1 + math.exp(-x))
+        return sigmoid(x)
 
     # Builds the skip-gram training pairs: (target, context) vocabulary indices.
     # Every token is paired with every other token within window_size positions of it in
@@ -462,36 +460,16 @@ class Embed:
                 hi = mid
         return lo
 
-    # Initialize the two weight matrices with small random values, each between
-    # -scale/2 and +scale/2, where scale = 0.5 / dim. Starting small and random keeps every
-    # token's vector different but close to zero, so no token starts out favoured.
+    # Builds the skip-gram network for the given tokens, with dim hidden neurons, and gives
+    # every synapse a small random starting weight (see SkipGramNetwork.initialize_weights).
     #
-    # w_in holds each token's embedding as a target (the vectors we keep at the end);
-    # w_out holds each token's vector as a context. Each is a list with one
-    # EmbeddingVector of dim values per vocabulary index, so w_in[9] is the target
-    # vector for the token at index 9.
-    #
-    # Example, with vocab_size = 3 and dim = 2:
-    #
-    #   w_in = [EmbeddingVector([t0d0, t0d1]),    <- token 0
-    #           EmbeddingVector([t1d0, t1d1]),    <- token 1
-    #           EmbeddingVector([t2d0, t2d1])]    <- token 2
-    #
-    # The rand() calls alternate between w_in and w_out, value by value, as in the
-    # TypeScript, so the same seed gives the same starting weights in both versions.
-    def init_weights(self, vocab_size: int, dim: int, rand: Callable[[], float]) -> tuple[list[EmbeddingVector], list[EmbeddingVector]]:
-        scale = 0.5 / dim
-        w_in: list[EmbeddingVector] = []
-        w_out: list[EmbeddingVector] = []
-        for _ in range(vocab_size):
-            in_values: list[float] = []
-            out_values: list[float] = []
-            for _ in range(dim):
-                in_values.append((rand() - 0.5) * scale)
-                out_values.append((rand() - 0.5) * scale)
-            w_in.append(EmbeddingVector(in_values))
-            w_out.append(EmbeddingVector(out_values))
-        return w_in, w_out
+    # Each token gets an input neuron and an output neuron. Its embedding is the weights on
+    # the synapses out of its input neuron (the vectors we keep at the end); its context
+    # vector is the weights on the synapses into its output neuron.
+    def init_network(self, token_names: list[str], dim: int, rand: Callable[[], float]) -> SkipGramNetwork:
+        network = SkipGramNetwork(token_names, dim)
+        network.initialize_weights(rand)
+        return network
 
     # Fisher-Yates shuffle: puts the pairs into a random order, in place.
     # Working back from the last position, swap each item with a randomly chosen
@@ -521,51 +499,11 @@ class Embed:
             return lr_start
         return lr_start - (lr_start - lr_end) * (epoch / epochs)
 
-    # Trains on one (target, other) pair and returns its loss.
-    #
-    # label is 1 for a positive pair (other really is near target in the text) and 0 for a
-    # negative sample (other is a random token). The model's score for the pair is
-    # sigmoid(target's w_in vector . other's w_out vector), a value from 0 to 1.
-    # Training moves the score towards the label:
-    #
-    #   positive (label 1):  grad = lr * (1 - score)  ->  the two vectors move closer together
-    #   negative (label 0):  grad = lr * (0 - score)  ->  the two vectors move apart
-    #
-    # Both vectors are updated using each other's values from before the update, which is
-    # why a copy of the target vector is taken first.
-    #
-    # The loss measures how wrong the score was: -log(score) for a positive and
-    # -log(1 - score) for a negative. It is 0 for a perfect score and grows as the score
-    # gets worse. 1e-10 stops log(0) when a score is exactly 0 or 1.
-    #
-    # Example, positive pair, vector size 2, lr = 0.1:
-    #
-    #   target vector (w_in) = [0.5, 0.5],  other vector (w_out) = [0.5, -0.5]
-    #   dot = 0.25 - 0.25 = 0  ->  score = sigmoid(0) = 0.5  ->  grad = 0.1 * (1 - 0.5) = 0.05
-    #   target vector becomes [0.5 + 0.05*0.5, 0.5 + 0.05*-0.5] = [0.525, 0.475]
-    #   other vector becomes  [0.5 + 0.05*0.5, -0.5 + 0.05*0.5] = [0.525, -0.475]
-    #   loss = -log(0.5) = 0.693
-    def train_pair(self, w_in: list[EmbeddingVector], w_out: list[EmbeddingVector],
-                   target: int, other: int, label: int, lr: float) -> float:
-        target_vector = w_in[target]
-        other_vector = w_out[other]
-
-        score = self.sigmoid(target_vector.dot(other_vector))
-        grad = lr * (label - score)
-
-        old_target_vector = target_vector.copy()
-        target_vector.add_scaled(other_vector, grad)
-        other_vector.add_scaled(old_target_vector, grad)
-
-        if label == 1:
-            return -math.log(score + 1e-10)
-        return -math.log(1 - score + 1e-10)
-
     # Runs one epoch: shuffles the pairs, then for each (target, context) pair trains on the
     # positive pair and on negative_samples random negatives. Returns the average loss per pair.
     #
     # A negative that happens to be the real context is skipped, since it isn't really "wrong".
-    def train_epoch(self, pairs: list[tuple[int, int]], w_in: list[EmbeddingVector], w_out: list[EmbeddingVector],
+    def train_epoch(self, pairs: list[tuple[int, int]], network: SkipGramNetwork,
                     negative_samples: int, cumulative: list[float], rand: Callable[[], float],
                     lr: float) -> float:
         if not pairs:
@@ -576,14 +514,14 @@ class Embed:
 
         for target, context in pairs:
             # Positive sample: push target and context closer
-            total_loss += self.train_pair(w_in, w_out, target, context, 1, lr)
+            total_loss += network.train_pair(target, context, 1, lr)
 
             # Negative samples: push target and random tokens apart
             for _ in range(negative_samples):
                 neg = self.sample_negative(cumulative, rand)
                 if neg == context:
                     continue
-                total_loss += self.train_pair(w_in, w_out, target, neg, 0, lr)
+                total_loss += network.train_pair(target, neg, 0, lr)
 
         return total_loss / len(pairs)
 
@@ -608,8 +546,8 @@ class Embed:
         return vector_a.dot(vector_b) / length_product
 
     # A word's embedding as a plain list, rounded to 6 decimal places
-    def get_vector(self, w_in: list[EmbeddingVector], word_index: int) -> list[float]:
-        return [self.round_6(value) for value in w_in[word_index].values]
+    def get_vector(self, network: SkipGramNetwork, word_index: int) -> list[float]:
+        return [self.round_6(value) for value in network.embedding(word_index)]
 
     # Looks up each query word in the vocabulary. Returns the indexes of words that are
     # single BPE tokens, plus a warning for each word that splits into several tokens.
@@ -654,7 +592,7 @@ class Embed:
         )
 
         negative_sampling_table = self.build_negative_sampling_table(self.vocabulary)
-        w_in, w_out = self.init_weights(vocab_size, embeded_vector_size, rand)
+        network = self.init_network([token.token for token in self.vocabulary.index_to_token], embeded_vector_size, rand)
 
         # How often (in epochs) to report progress: about 50 reports over the whole run,
         # but never less than every epoch. For example, 200 epochs -> every 4th epoch;
@@ -669,27 +607,27 @@ class Embed:
         # Note: epochs + 1 passes (0 to epochs inclusive), as in the TypeScript
         for epoch in range(epochs + 1):
             lr = self.learning_rate(epoch, epochs, lr_start, lr_end)
-            loss = self.train_epoch(positive_pairs, w_in, w_out, negative_samples, negative_sampling_table, rand, lr)
+            loss = self.train_epoch(positive_pairs, network, negative_samples, negative_sampling_table, rand, lr)
             if epoch % step == 0 or epoch == epochs:
                 yield EpochResult(epoch=epoch, loss=self.round_6(loss))
 
         # Report on the query words that are single tokens; the rest only get a warning
         query_indices, warnings = self.find_query_indices(words)
 
-        embeddings = [WordEmbedding(word=self.vocabulary.token_at(index).token, vector=self.get_vector(w_in, index))
+        embeddings = [WordEmbedding(word=self.vocabulary.token_at(index).token, vector=self.get_vector(network, index))
                       for index in query_indices]
 
         # Nearest neighbors for each query word: the 5 other tokens with the most similar vectors
         neighbors: list[Neighbor] = []
         for query_index in query_indices:
-            query_vector = self.get_vector(w_in, query_index)
+            query_vector = self.get_vector(network, query_index)
             scores: list[NeighborScore] = []
             for index in range(vocab_size):
                 if index == query_index:
                     continue
                 scores.append(NeighborScore(
                     word=self.vocabulary.token_at(index).token,
-                    score=self.round_2(self.cosine_similarity(query_vector, self.get_vector(w_in, index)))
+                    score=self.round_2(self.cosine_similarity(query_vector, self.get_vector(network, index)))
                 ))
             # sort() is stable, like JavaScript's, so tied scores keep vocabulary order
             scores.sort(key=lambda neighbor_score: neighbor_score.score, reverse=True)
@@ -702,12 +640,12 @@ class Embed:
                 similarities.append(SimilarityPair(
                     a=self.vocabulary.token_at(query_indices[i]).token,
                     b=self.vocabulary.token_at(query_indices[j]).token,
-                    score=self.round_2(self.cosine_similarity(self.get_vector(w_in, query_indices[i]),
-                                                              self.get_vector(w_in, query_indices[j])))
+                    score=self.round_2(self.cosine_similarity(self.get_vector(network, query_indices[i]),
+                                                              self.get_vector(network, query_indices[j])))
                 ))
 
         # Analogies: for each "a - b + c", find the token whose vector is closest to
-        # w_in[a] - w_in[b] + w_in[c], not counting a, b and c themselves
+        # embedding(a) - embedding(b) + embedding(c), not counting a, b and c themselves
         analogies: list[Analogy] = []
         for a, b, c in ANALOGIES:
             a_index = self.vocabulary.token_to_index.get(Token(a))
@@ -717,8 +655,8 @@ class Embed:
                 continue
 
             # Uses the unrounded weights, as the TypeScript does
-            result_vector = [w_in[a_index].values[d] - w_in[b_index].values[d] + w_in[c_index].values[d]
-                             for d in range(embeded_vector_size)]
+            a_vector, b_vector, c_vector = network.embedding(a_index), network.embedding(b_index), network.embedding(c_index)
+            result_vector = [a_vector[d] - b_vector[d] + c_vector[d] for d in range(embeded_vector_size)]
 
             best_index = -1
             best_score = -math.inf
@@ -726,7 +664,7 @@ class Embed:
             for index in range(vocab_size):
                 if index in exclude:
                     continue
-                score = self.cosine_similarity(result_vector, self.get_vector(w_in, index))
+                score = self.cosine_similarity(result_vector, self.get_vector(network, index))
                 if score > best_score:
                     best_score = score
                     best_index = index
@@ -745,7 +683,7 @@ class Embed:
             "vocab": [token.token for token in self.vocabulary.index_to_token],
             "merges": [{"pair": [rule.pair[0].token, rule.pair[1].token], "merged": rule.merged.token}
                        for rule in self.tokenizer.merge_rules],
-            "embeddings": {self.vocabulary.token_at(index).token: self.get_vector(w_in, index)
+            "embeddings": {self.vocabulary.token_at(index).token: self.get_vector(network, index)
                            for index in range(vocab_size)},
         }
         weights_path = Path(__file__).resolve().parent.parent / ".data" / "embedding-weights.json"

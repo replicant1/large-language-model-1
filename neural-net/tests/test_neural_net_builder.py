@@ -1,4 +1,5 @@
 from neural_net_builder import NeuralNetBuilder
+from neuron import identity, sigmoid
 import unittest
 
 class TestNeuralNetBuilder(unittest.TestCase):
@@ -54,6 +55,35 @@ class TestNeuralNetBuilder(unittest.TestCase):
             self.assertEqual(len(neuron.synapses_out), 1)
         for neuron in layer_2_neurons:
             self.assertEqual(len(neuron.synapses_in), 2)
+
+    def test_default_names_and_weights(self):
+        neural_net = NeuralNetBuilder([2, 1]).build()
+        self.assertEqual(["neuron_0_layer_0", "neuron_1_layer_0", "neuron_0_layer_1"], [neuron.id for neuron in neural_net.neurons])
+        self.assertEqual(["layer_0", "layer_1"], [layer.name for layer in neural_net.layers])
+        self.assertEqual([1.0, 1.0], [synapse.weight for synapse in neural_net.output_layer.neurons[0].synapses_in])
+        self.assertIs(identity, neural_net.neurons[0].activation)
+
+    def test_layers_hold_their_neurons_in_order(self):
+        neural_net = NeuralNetBuilder([3, 2, 1]).build()
+        self.assertEqual([3, 2, 1], [layer.size() for layer in neural_net.layers])
+        self.assertEqual(neural_net.neurons[3:5], neural_net.layers[1].neurons)
+
+    def test_names_activations_and_initial_weight(self):
+        neural_net = NeuralNetBuilder([2, 1], layer_names=["input", "output"],
+                                      neuron_names_per_layer=[["the", "cat"], ["sat"]],
+                                      activation_per_layer=[identity, sigmoid],
+                                      initial_weight=0.25).build()
+        self.assertEqual(["input:the", "input:cat"], [neuron.id for neuron in neural_net.layer("input").neurons])
+        self.assertEqual("output:sat", neural_net.layer("output").neurons[0].id)
+        self.assertIs(sigmoid, neural_net.output_layer.neurons[0].activation)
+        self.assertEqual([0.25, 0.25], [synapse.weight for synapse in neural_net.output_layer.neurons[0].synapses_in])
+
+    def test_synapses_are_in_neuron_order_of_the_next_layer(self):
+        neural_net = NeuralNetBuilder([2, 3]).build()
+        for neuron in neural_net.input_layer.neurons:
+            self.assertEqual(neural_net.output_layer.neurons, [synapse.to_neuron for synapse in neuron.synapses_out])
+        for neuron in neural_net.output_layer.neurons:
+            self.assertEqual(neural_net.input_layer.neurons, [synapse.from_neuron for synapse in neuron.synapses_in])
 
 if __name__ == "__main__":
     unittest.main()
