@@ -128,6 +128,13 @@ pre a.line-link { color: var(--accent); text-decoration: none; border-bottom: 1p
 pre a.line-link:hover { background: var(--accent-soft); }
 svg a:hover rect { stroke: var(--accent); stroke-width: 2; }
 svg a { cursor: pointer; }
+details.deeper { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); margin: 24px 0; }
+details.deeper > summary { cursor: pointer; padding: 12px 16px; font-weight: 600; list-style: none; }
+details.deeper > summary::-webkit-details-marker { display: none; }
+details.deeper > summary::before { content: "▸"; display: inline-block; width: 1.2em; color: var(--accent); transition: transform 0.15s; }
+details.deeper[open] > summary::before { transform: rotate(90deg); }
+details.deeper > summary .tag { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-left: 8px; }
+details.deeper > .body { padding: 0 16px 8px; border-top: 1px solid var(--line); }
 </style>
 </head>
 <body>
@@ -364,11 +371,115 @@ sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span clas
 <pre>w_in[king] = [-0.00352, 0.00276, 0.00497, -0.00729, -0.00632, 0.00568, …]</pre>
 <p>Right now they mean nothing; they're just noise. <a href="#random">Section 12</a> explains why they have to be random rather than all zero.</p>
 
+<h3 id="why-centred">Why centred on zero, rather than only positive?</h3>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L490-L491" target="_blank" rel="noopener"><span class="src-name">rand() − 0.5</span><span class="src-loc">embed.py lines 490–491</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L483" target="_blank" rel="noopener"><span class="src-name">scale = 0.5 / dim</span><span class="src-loc">embed.py line 483</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L557-L558" target="_blank" rel="noopener"><span class="src-name">updates that push weights negative</span><span class="src-loc">embed.py lines 557–558</span></a></div>
+
+<p>The key is the <code>− 0.5</code> in <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>init_weights</code></a>: <code>(rand() − 0.5) * scale</code>. <code>rand()</code> gives a number between 0 and 1, and subtracting 0.5 shifts it to between −0.5 and +0.5, so the starting weights are spread evenly around zero. There are three reasons this matters.</p>
+
+<figure>
+<svg viewBox="0 0 720 320" role="img" aria-label="Zero-centred random vectors point in all directions; positive-only vectors crowd into one corner"><text x="180" y="22" text-anchor="middle" font-weight="700" font-size="14">Centred on zero (your code)</text><text x="180" y="40" text-anchor="middle" class="muted" font-size="12.5">rand() − 0.5: values can be + or −</text><line x1="65" y1="170" x2="295" y2="170" class="grid" stroke-width="1.5"/><line x1="180" y1="55" x2="180" y2="285" class="grid" stroke-width="1.5"/><line x1="180" y1="170" x2="268.0" y2="151.3" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><line x1="180" y1="170" x2="214.0" y2="103.2" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><line x1="180" y1="170" x2="135.4" y2="86.1" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><line x1="180" y1="170" x2="113.8" y2="147.2" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><line x1="180" y1="170" x2="100.2" y2="207.2" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><line x1="180" y1="170" x2="148.7" y2="243.6" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><line x1="180" y1="170" x2="211.5" y2="256.5" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><line x1="180" y1="170" x2="249.5" y2="205.4" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><text x="540" y="22" text-anchor="middle" font-weight="700" font-size="14">Positive only</text><text x="540" y="40" text-anchor="middle" class="muted" font-size="12.5">rand(): values are all +</text><rect x="540" y="60" width="110" height="110" fill="var(--neg-soft)" opacity="0.5"/><text x="644" y="74" text-anchor="end" font-size="11" class="muted">all values &gt; 0</text><line x1="425" y1="170" x2="655" y2="170" class="grid" stroke-width="1.5"/><line x1="540" y1="55" x2="540" y2="285" class="grid" stroke-width="1.5"/><line x1="540" y1="170" x2="629.3" y2="147.7" stroke="var(--neg)" stroke-width="2.5" marker-end="url(#arrN)"/><line x1="540" y1="170" x2="611.3" y2="133.7" stroke="var(--neg)" stroke-width="2.5" marker-end="url(#arrN)"/><line x1="540" y1="170" x2="619.3" y2="112.4" stroke="var(--neg)" stroke-width="2.5" marker-end="url(#arrN)"/><line x1="540" y1="170" x2="600.1" y2="109.9" stroke="var(--neg)" stroke-width="2.5" marker-end="url(#arrN)"/><line x1="540" y1="170" x2="597.9" y2="95.9" stroke="var(--neg)" stroke-width="2.5" marker-end="url(#arrN)"/><line x1="540" y1="170" x2="577.8" y2="101.8" stroke="var(--neg)" stroke-width="2.5" marker-end="url(#arrN)"/><line x1="540" y1="170" x2="570.8" y2="85.4" stroke="var(--neg)" stroke-width="2.5" marker-end="url(#arrN)"/><line x1="540" y1="170" x2="554.6" y2="87.3" stroke="var(--neg)" stroke-width="2.5" marker-end="url(#arrN)"/><text x="180" y="306" text-anchor="middle" font-size="13">point every which way → unrelated</text><text x="540" y="306" text-anchor="middle" font-size="13">all crowd into one corner → falsely similar</text></svg>
+<figcaption>A 2-D sketch of eight random starting vectors. With values centred on zero they point in all directions. With positive-only values they all fall in one corner, all leaning the same way. In 32 dimensions the effect is the same, just harder to draw.</figcaption>
+</figure>
+
+<p><strong>1. Random vectors should start out unrelated.</strong> What matters about an embedding is its <em>direction</em>, and similarity is measured by the angle between vectors. With values centred on zero, random vectors in 32 dimensions are nearly at right angles to each other, so their cosine similarity is close to 0. Your run confirms this: before training, king/queen was 0.18, man/woman −0.24 and cat/dog −0.03. With positive-only values, every vector would lean towards the same diagonal direction, (1, 1, …, 1), and two random vectors would have an expected cosine similarity of about <strong>0.75</strong>. Before seeing any data, the model would already "think" every word was similar to every other word.</p>
+
+<p><strong>2. The model should start with no opinion.</strong> With values centred on zero, positive and negative products cancel out, so every dot product starts near 0 and every score near 0.5: "no idea". With positive-only values, every dot product would be positive and every score above 0.5. The model would start biased towards "yes, these go together" for <em>every</em> pair, fake ones included, and training would first have to undo that.</p>
+
+<p><strong>3. Training produces negative weights anyway.</strong> Every negative sample makes <code>grad</code> negative, and <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L557" target="_blank" rel="noopener"><code>target_vector.add_scaled(other_vector, grad)</code></a> then subtracts from the weights. Negative values are how vectors point <em>away</em> from each other, which is what "unrelated" and "opposite" mean geometrically, and analogies like <code>king − man + woman</code> rely on subtraction. You could only keep the weights positive by clipping them after every update, which would confine every vector to one corner where no two can be more than 90° apart.</p>
+
+<table>
+<thead><tr><th></th><th>Centred on zero (your code)</th><th>Positive only</th></tr></thead>
+<tbody>
+<tr><td>Random vectors' similarity</td><td class="ok">≈ 0 (unrelated)</td><td class="bad">≈ 0.75 (falsely similar)</td></tr>
+<tr><td>Starting score for any pair</td><td class="ok">≈ 0.5 ("no idea")</td><td class="bad">&gt; 0.5 (biased towards "yes")</td></tr>
+<tr><td>Can vectors point in opposite directions?</td><td class="ok">Yes</td><td class="bad">No</td></tr>
+</tbody>
+</table>
+
+<p>The values are also kept <strong>small</strong> (<code>scale = 0.5 / dim</code>) so that no token starts with a strong built-in opinion either. Zero-centred means no bias in direction, and small means no bias in size.</p>
+
+
 <!-- ============================================================ -->
 <h2 id="score">6. Step 4: Scoring a pair</h2>
 <div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L309-L318" target="_blank" rel="noopener"><span class="src-name">EmbeddingVector.dot</span><span class="src-loc">embed.py lines 309–318</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L358-L365" target="_blank" rel="noopener"><span class="src-name">sigmoid</span><span class="src-loc">embed.py lines 358–365</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L361-L364" target="_blank" rel="noopener"><span class="src-name">the ±6 shortcut</span><span class="src-loc">embed.py lines 361–364</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L553" target="_blank" rel="noopener"><span class="src-name">score in train_pair</span><span class="src-loc">embed.py line 553</span></a></div>
 
-<p>For a pair (target, other), the model needs a guess: <em>how likely is it that these two really appeared together?</em> It works that out in two steps.</p>
+<p>For a pair (target, other), the model needs a guess: <em>how likely is it that these two really appeared together?</em></p>
+
+<h3 id="what-together">What does "really appeared together" mean?</h3>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L644-L645" target="_blank" rel="noopener"><span class="src-name">pairs built from CORPUS only</span><span class="src-loc">embed.py lines 644–645</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L382-L384" target="_blank" rel="noopener"><span class="src-name">the window</span><span class="src-loc">embed.py lines 382–384</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L579" target="_blank" rel="noopener"><span class="src-name">real pair: label 1</span><span class="src-loc">embed.py line 579</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L583-L586" target="_blank" rel="noopener"><span class="src-name">fake pair: label 0</span><span class="src-loc">embed.py lines 583–586</span></a></div>
+
+<p>Both "together" and "really" have exact meanings, set by <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L367-L385" target="_blank" rel="noopener"><code>build_training_pairs</code></a>. The <a href="#pairs">sliding-window diagram in section 4</a> shows the mechanics; here is what it means for the guess.</p>
+
+<p><strong>Where: in the <code>CORPUS</code> sentences, and nowhere else.</strong> "Appeared together" means in the 107 sentences of <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L26-L149" target="_blank" rel="noopener"><code>CORPUS</code></a>, after each has been split into BPE tokens. Two consequences:</p>
+<ul>
+<li><strong><code>STORIES</code> isn't used.</strong> Pairs are built only from <code>CORPUS</code>, so the king sitting on the throne in the stories counts for nothing, while "the king sits on the throne" in <code>CORPUS</code> counts.</li>
+<li><strong>Each <code>CORPUS</code> entry is a separate unit.</strong> Pairs never cross from one entry to the next, so the last token of one sentence and the first of the next are never "together".</li>
+</ul>
+
+<p><strong>Together: within <code>window_size</code> tokens, in the same sentence.</strong> Your runs use <code>window_size = 2</code>, so a target is together with up to 2 tokens on each side. In "the kitten is tiny and cute":</p>
+<table>
+<thead><tr><th>target</th><th>together with (window 2)</th><th>not together</th></tr></thead>
+<tbody>
+<tr><td><code>kitten</code></td><td class="ok">the, is, tiny</td><td class="bad">and, cute</td></tr>
+<tr><td><code>tiny</code></td><td class="ok">kitten, is, and, cute</td><td class="bad">the</td></tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Distance is counted in tokens, not words.</strong> "mat" is two tokens (<code>m</code>, <code>at</code>), so it takes up two positions. A word that splits into several pieces uses up more of the window, so fewer whole words fit within reach.</li>
+<li><strong>Distance within the window doesn't matter.</strong> A neighbour 1 position away and one 2 positions away count equally. (The original word2vec gives nearer words more weight by randomly shrinking the window for each target; your code doesn't.)</li>
+<li><strong>Order doesn't matter either.</strong> Every pair is generated in both directions: kitten → tiny when kitten is the target, and tiny → kitten when tiny is.</li>
+<li><strong>Repeats count again.</strong> Two tokens that are neighbours in several sentences get one pair for each time. "the" and "cat" are neighbours many times, so that pair turns up many times in the training list and gets pulled together more often. That's how frequency turns into strength.</li>
+</ul>
+
+<p><strong>"Really" means: from the pair list, rather than made up.</strong> During training the model never looks back at the corpus (<a href="#never-looks-back" onclick="document.getElementById('never-looks-back').open=true">why?</a>). A "real" pair is simply one that came from the list <code>build_training_pairs</code> made (label 1). A "fake" pair is one whose second token was picked at random by <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L441-L463" target="_blank" rel="noopener"><code>sample_negative</code></a> (label 0).</p>
+
+<div class="callout"><p><strong>Fake pairs aren't always truly fake.</strong> A randomly drawn negative can be a pair that does appear together elsewhere in the corpus. If "the" is drawn as a negative for "cat", it still gets label 0, even though "the cat" is everywhere. The only check is that a negative isn't the same as <em>this</em> pair's real context. The model learns despite that noise: it sees (cat, the) far more often as a real pair than as a fake one, so on balance the two are pulled together.</p></div>
+
+
+<details class="deeper" id="never-looks-back">
+<summary>Why does training never look back at the corpus?<span class="tag">Going deeper</span></summary>
+<div class="body">
+<div class="where" style="margin-top:14px"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L548-L562" target="_blank" rel="noopener"><span class="src-name">train_pair: only two vectors</span><span class="src-loc">embed.py lines 548–562</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L577-L586" target="_blank" rel="noopener"><span class="src-name">one pair at a time</span><span class="src-loc">embed.py lines 577–586</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L582-L586" target="_blank" rel="noopener"><span class="src-name">negatives drawn, never checked</span><span class="src-loc">embed.py lines 582–586</span></a></div>
+
+<p>Corpus size is part of the answer, but not the main part. There are three reasons, plus a trade-off.</p>
+
+<h3>1. The pair list already contains everything training uses</h3>
+<p>Skip-gram's only question is "which tokens appear within the window of which other tokens?" Once <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L367-L385" target="_blank" rel="noopener"><code>build_training_pairs</code></a> has made the list, it holds exactly that, with repeats preserved. Word order beyond the window, which sentence a pair came from, and grammar are never used. There's nothing left in the corpus for training to go back for.</p>
+
+<h3>2. The objective is a sum over separate pairs</h3>
+<p>Skip-gram's whole goal can be written as one big sum:</p>
+<pre>total loss = sum over every (target, context) pair of
+             [ loss of the real pair + loss of its negatives ]</pre>
+<p>Each term depends only on its own two tokens and their vectors. No term asks about the sentence it came from, other pairs, or the corpus as a whole. That's deliberate, and comes from the <em>distributional hypothesis</em>: a word's meaning is reflected in the words that tend to appear near it. If local context is all that matters, the rest of the corpus is irrelevant by design.</p>
+<p>A sum of separate terms is ideal for <strong>stochastic gradient descent</strong>: improve the total one piece at a time by taking a pair, nudging two vectors and moving on. That's exactly what <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L524-L562" target="_blank" rel="noopener"><code>train_pair</code></a> does, and it brings big practical benefits:</p>
+<ul>
+<li><strong>Memory doesn't grow with the corpus.</strong> Only the current pair and the two weight tables are needed.</li>
+<li><strong>Order doesn't matter</strong>, which is why shuffling works.</li>
+<li><strong>Training can stream.</strong> Real word2vec, trained on billions of words, never builds a pair list at all. It reads through the text each epoch, makes pairs from the sliding window as it goes, trains on them and throws them away. (Your code builds the list once and reuses it, which is fine for 2,526 pairs.)</li>
+<li><strong>Training can run in parallel.</strong> Each update touches only a few vectors, so several threads can process different pairs at once. The original word2vec did this.</li>
+</ul>
+<p>Any step that needed a global view, like "check this against the whole corpus", would break all four.</p>
+
+<h3>3. Negative sampling removed the one global step</h3>
+<p>Before word2vec, neural language models typically computed a full <strong>softmax</strong>. To score one pair, they compared the target against <em>every</em> word in the vocabulary, so the scores would add up to 1 as probabilities. That was the expensive global step: not a scan of the corpus, but a scan of the whole vocabulary for every single pair. Negative sampling replaced it with "the context versus k random tokens" (5 in your runs), cutting the cost per pair from proportional to the vocabulary size to a small constant. That, more than anything, is why word2vec (Mikolov et al., 2013) could train on billions of words.</p>
+
+<p>It's also why negatives aren't checked against the corpus, even though that would be easy here: put the 2,526 pairs in a Python <code>set</code>, and each check takes a moment. Negative sampling doesn't ask "is this pair true or false?". It asks the model to tell <strong>pairs from the text</strong> apart from <strong>pairs drawn from a noise distribution</strong> (tokens weighted by frequency<sup>0.75</sup>). Levy and Goldberg (2014) showed that this pushes each dot product towards a measure of how much more often two tokens co-occur than chance would predict (pointwise mutual information, minus a constant for the number of negatives). That result depends on the negatives being drawn independently of the data, so filtering them would actually skew the vectors.</p>
+
+<h3>The trade-off: other methods do look at the whole corpus</h3>
+<p>It's a design choice, not the only option. <strong>LSA</strong> and <strong>GloVe</strong> (Pennington et al., 2014) go through the whole corpus first and build a co-occurrence table (how often each word appears near each other word), then fit vectors to that table. GloVe's authors argued that using these global counts makes better use of the data. The two approaches turn out to be closely related: skip-gram with negative sampling is, in effect, fitting the same kind of table without ever building it.</p>
+<table>
+<thead><tr><th></th><th>Skip-gram (your code)</th><th>GloVe / count-based</th></tr></thead>
+<tbody>
+<tr><td>Looks at</td><td>one pair at a time</td><td>the global co-occurrence table</td></tr>
+<tr><td>Memory</td><td>weight tables only</td><td>weights + a vocab × vocab table</td></tr>
+<tr><td>Stream / parallelise</td><td>easily</td><td>the table must be built first</td></tr>
+<tr><td>Uses</td><td>each occurrence as a separate nudge</td><td>the total counts all at once</td></tr>
+</tbody>
+</table>
+</div>
+</details>
+
+<p>The model works out its guess in two steps.</p>
 
 <h3>a) The dot product: do the vectors agree?</h3>
 <p>Multiply the two vectors element by element and add up the results. This is <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L309-L318" target="_blank" rel="noopener"><code>EmbeddingVector.dot</code></a>:</p>
