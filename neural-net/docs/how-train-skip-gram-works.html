@@ -149,6 +149,28 @@ p.muted { color: var(--muted); }
 .sim-readout b { font-family: ui-monospace, Menlo, monospace; font-size: 0.95rem; font-variant-numeric: tabular-nums; }
 .sim-explain { font-size: 0.92rem; margin: 10px 0 0; min-height: 3em; }
 .fig-label { font-weight: 700; color: var(--ink); margin-right: 2px; }
+
+#overviewSvg .ov-dot { offset-path: path("M600 194 C 600 222, 420 206, 380 238"); animation: ovDot 3s linear infinite; opacity: 0; }
+#overviewSvg .ov-dot1 { animation-delay: 1s; } #overviewSvg .ov-dot2 { animation-delay: 2s; }
+@keyframes ovDot { 0% { offset-distance: 0%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { offset-distance: 100%; opacity: 0; } }
+#overviewSvg .ov-spin { transform-box: view-box; transform-origin: 438px 276px; animation: ovSpin 4s linear infinite; }
+@keyframes ovSpin { to { transform: rotate(360deg); } }
+#overviewSvg .ov-king, #overviewSvg .ov-sits, #overviewSvg .ov-pizza { transform-box: view-box; transform-origin: 330px 388px; animation-duration: 3s; animation-iteration-count: infinite; animation-timing-function: ease-in-out; }
+#overviewSvg .ov-king { animation-name: ovKing; } #overviewSvg .ov-sits { animation-name: ovSits; } #overviewSvg .ov-pizza { animation-name: ovPizza; }
+@keyframes ovKing { 0%, 15% { transform: rotate(0deg); } 55%, 80% { transform: rotate(-16deg); } 100% { transform: rotate(0deg); } }
+@keyframes ovSits { 0%, 15% { transform: rotate(0deg); } 55%, 80% { transform: rotate(14deg); } 100% { transform: rotate(0deg); } }
+@keyframes ovPizza { 0%, 15% { transform: rotate(0deg); } 55%, 80% { transform: rotate(16deg); } 100% { transform: rotate(0deg); } }
+#overviewSvg .ov-word { transform-box: view-box; transform-origin: 605px 430px; animation: ovWord 7s ease-in-out infinite; }
+@keyframes ovWord { 0%, 8% { transform: rotate(var(--r0)); } 45%, 92% { transform: rotate(0deg); } 100% { transform: rotate(var(--r0)); } }
+#overviewSvg .ov-label { animation: ovLabel 7s ease-in-out infinite; }
+@keyframes ovLabel { 0%, 38% { opacity: 0; } 48%, 90% { opacity: 1; } 98%, 100% { opacity: 0; } }
+#overviewSvg .ov-loss { stroke-dasharray: 260; animation: ovLoss 7s ease-out infinite; }
+@keyframes ovLoss { 0% { stroke-dashoffset: 260; } 45%, 100% { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  #overviewSvg *, #overviewSvg { animation: none !important; }
+  #overviewSvg .ov-dot { display: none; }
+  #overviewSvg .ov-label { opacity: 1; }
+}
 </style>
 </head>
 <body>
@@ -222,13 +244,141 @@ p.muted { color: var(--muted); }
 
 <p>The model never sees a definition of any word. It only plays a guessing game, millions of times over: <em>"Here are two tokens. Did they really appear near each other in the text, or is this a random pairing?"</em> To get good at that game it has to place tokens with similar neighbours close together. The vectors that result are the embeddings.</p>
 
+<h3 id="at-a-glance">The whole thing in one picture</h3>
+<figure id="fig-2">
+<svg id="overviewSvg" viewBox="0 0 720 610" role="img" aria-label="The whole of train_skip_gram in one picture: corpus, tokens and window, training pairs, the training loop that nudges vectors, and the resulting embeddings">
+<defs>
+<marker id="ovM" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker>
+<marker id="ovA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+<marker id="ovP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--pos)"/></marker>
+<marker id="ovN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--neg)"/></marker>
+<marker id="ovV" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--violet)"/></marker>
+<marker id="ovG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--gold)"/></marker>
+</defs>
+<circle cx="30" cy="30" r="11" fill="var(--accent)"/><text x="30" y="34.5" text-anchor="middle" font-size="13" font-weight="700" fill="var(--surface)">1</text>
+<text x="48" y="35" font-size="14" font-weight="700">Corpus</text>
+<rect x="38" y="72" width="112" height="104" rx="5" fill="var(--surface)" stroke="var(--line)" stroke-width="1.5"/>
+<rect x="31" y="64" width="112" height="104" rx="5" fill="var(--surface)" stroke="var(--line)" stroke-width="1.5"/>
+<rect x="24" y="56" width="112" height="104" rx="5" fill="var(--surface)" stroke="var(--line)" stroke-width="1.5"/>
+<line x1="34" y1="72" x2="124" y2="72" stroke="var(--line)" stroke-width="4" stroke-linecap="round"/>
+<line x1="34" y1="86" x2="104" y2="86" stroke="var(--line)" stroke-width="4" stroke-linecap="round"/>
+<rect x="30" y="92" width="102" height="12" rx="2" fill="var(--accent-soft)"/>
+<text x="33" y="101" font-size="6.3" class="mono">the king sits on the throne</text>
+<line x1="34" y1="114" x2="94" y2="114" stroke="var(--line)" stroke-width="4" stroke-linecap="round"/>
+<line x1="34" y1="128" x2="122" y2="128" stroke="var(--line)" stroke-width="4" stroke-linecap="round"/>
+<line x1="34" y1="142" x2="108" y2="142" stroke="var(--line)" stroke-width="4" stroke-linecap="round"/>
+<text x="24" y="186" font-size="11.5" class="muted">107 short sentences</text>
+<path d="M156 108 L184 108" stroke="var(--muted)" stroke-width="2" fill="none" marker-end="url(#ovM)"/>
+<circle cx="200" cy="30" r="11" fill="var(--accent)"/><text x="200" y="34.5" text-anchor="middle" font-size="13" font-weight="700" fill="var(--surface)">2</text>
+<text x="218" y="35" font-size="14" font-weight="700">Tokens + window</text>
+<rect x="192.0" y="92" width="36.8" height="30" rx="6" class="box-pos"/>
+<text x="210.4" y="112" text-anchor="middle" font-size="12.5" class="mono" font-weight="500">the</text>
+<rect x="233.8" y="92" width="44.4" height="30" rx="6" class="box-accent"/>
+<text x="256.0" y="112" text-anchor="middle" font-size="12.5" class="mono" font-weight="700">king</text>
+<rect x="283.2" y="92" width="44.4" height="30" rx="6" class="box-pos"/>
+<text x="305.4" y="112" text-anchor="middle" font-size="12.5" class="mono" font-weight="500">sits</text>
+<rect x="332.6" y="92" width="29.2" height="30" rx="6" class="box-pos"/>
+<text x="347.2" y="112" text-anchor="middle" font-size="12.5" class="mono" font-weight="500">on</text>
+<rect x="366.8" y="92" width="36.8" height="30" rx="6" class="box"/>
+<text x="385.2" y="112" text-anchor="middle" font-size="12.5" class="mono" font-weight="500">the</text>
+<rect x="408.6" y="92" width="59.6" height="30" rx="6" class="box"/>
+<text x="438.4" y="112" text-anchor="middle" font-size="12.5" class="mono" font-weight="500">throne</text>
+<rect x="187.0" y="84" width="179.8" height="46" rx="9" fill="none" stroke="var(--accent)" stroke-dasharray="5 4" stroke-width="1.5"/>
+<text x="187.0" y="78" font-size="10.5" fill="var(--accent)">window ±2</text>
+<text x="256.0" y="146" text-anchor="middle" font-size="11" fill="var(--accent)" font-weight="600">target</text>
+<path d="M256.0 126 Q 233.2 150 210.4 126" fill="none" stroke="var(--pos)" stroke-width="1.3"/>
+<path d="M256.0 126 Q 280.7 150 305.4 126" fill="none" stroke="var(--pos)" stroke-width="1.3"/>
+<path d="M256.0 126 Q 301.6 150 347.2 126" fill="none" stroke="var(--pos)" stroke-width="1.3"/>
+<text x="192" y="172" font-size="11.5" class="muted">each token in turn is the target;</text>
+<text x="192" y="186" font-size="11.5" class="muted">tokens within 2 places are its neighbours</text>
+<path d="M486 108 L514 108" stroke="var(--muted)" stroke-width="2" fill="none" marker-end="url(#ovM)"/>
+<circle cx="536" cy="30" r="11" fill="var(--accent)"/><text x="536" y="34.5" text-anchor="middle" font-size="13" font-weight="700" fill="var(--surface)">3</text>
+<text x="554" y="35" font-size="14" font-weight="700">Real-neighbour pairs</text>
+<rect x="526" y="56" width="140" height="32" rx="7" fill="var(--pos-soft)" stroke="var(--pos)" stroke-width="1.5"/>
+<text x="596" y="77" text-anchor="middle" font-size="13" class="mono" font-weight="600">(king, the)</text>
+<rect x="540" y="92" width="140" height="32" rx="7" fill="var(--pos-soft)" stroke="var(--pos)" stroke-width="1.5"/>
+<text x="610" y="113" text-anchor="middle" font-size="13" class="mono" font-weight="600">(king, sits)</text>
+<rect x="554" y="128" width="140" height="32" rx="7" fill="var(--pos-soft)" stroke="var(--pos)" stroke-width="1.5"/>
+<text x="624" y="149" text-anchor="middle" font-size="13" class="mono" font-weight="600">(king, on)</text>
+<text x="526" y="172" font-size="11.5" class="muted">2,526 pairs from the whole corpus</text>
+<text x="526" y="186" font-size="11.5" class="muted">(label 1: "really appeared together")</text>
+<path d="M600 194 C 600 222, 420 206, 380 238" stroke="var(--muted)" stroke-width="2" fill="none" marker-end="url(#ovM)"/>
+<circle r="4" fill="var(--pos)" class="ov-dot ov-dot0"/>
+<circle r="4" fill="var(--pos)" class="ov-dot ov-dot1"/>
+<circle r="4" fill="var(--pos)" class="ov-dot ov-dot2"/>
+<rect x="14" y="244" width="462" height="326" rx="14" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="6 4"/>
+<circle cx="36" cy="268" r="11" fill="var(--accent)"/><text x="36" y="272.5" text-anchor="middle" font-size="13" font-weight="700" fill="var(--surface)">4</text>
+<text x="54" y="273" font-size="14" font-weight="700">Train: for every pair, every epoch</text>
+<g class="ov-spin"><path d="M444 276 a 12 12 0 1 1 -8 -11" fill="none" stroke="var(--accent)" stroke-width="2.2" marker-end="url(#ovA)"/></g>
+<text x="438" y="304" text-anchor="middle" font-size="10" fill="var(--accent)">×101</text>
+<text x="34" y="306" font-size="11.5" font-weight="600">Ask: real neighbour?</text>
+<rect x="34" y="316" width="128" height="30" rx="6" fill="var(--pos-soft)" stroke="var(--pos)" stroke-width="1.5"/>
+<text x="98" y="336" text-anchor="middle" font-size="12" class="mono" font-weight="600">(king, sits)</text>
+<text x="170" y="336" font-size="11" fill="var(--pos)" font-weight="700">yes</text>
+<rect x="34" y="354" width="128" height="30" rx="6" fill="var(--neg-soft)" stroke="var(--neg)" stroke-width="1.5"/>
+<text x="98" y="374" text-anchor="middle" font-size="12" class="mono" font-weight="600">(king, pizza)</text>
+<text x="170" y="374" font-size="11" fill="var(--neg)" font-weight="700">no</text>
+<rect x="34" y="390" width="128" height="30" rx="6" fill="var(--neg-soft)" stroke="var(--neg)" stroke-width="1.5"/>
+<text x="98" y="410" text-anchor="middle" font-size="12" class="mono" font-weight="600">(king, e)</text>
+<text x="170" y="410" font-size="11" fill="var(--neg)" font-weight="700">no</text>
+<text x="34" y="440" font-size="10.5" class="muted">+ 5 random tokens 🎲 per real pair</text>
+<path d="M196 372 L222 372" stroke="var(--muted)" stroke-width="2" fill="none" marker-end="url(#ovM)"/>
+<circle cx="330" cy="388" r="100" fill="var(--surface)" stroke="var(--line)" stroke-width="1.5"/>
+<text x="330" y="282" text-anchor="middle" font-size="11" class="muted">zoom in on one nudge</text>
+<line x1="238" y1="388" x2="422" y2="388" class="grid"/><line x1="330" y1="296" x2="330" y2="480" class="grid"/>
+<g class="ov-king"><line x1="330.0" y1="388.0" x2="408.3" y2="371.4" stroke="var(--accent)" stroke-width="3" stroke-dasharray="" marker-end="url(#ovA)" class=""/></g>
+<g class="ov-sits"><line x1="330.0" y1="388.0" x2="360.0" y2="313.8" stroke="var(--pos)" stroke-width="3" stroke-dasharray="7 4" marker-end="url(#ovP)" class=""/></g>
+<g class="ov-pizza"><line x1="330.0" y1="388.0" x2="364.7" y2="453.3" stroke="var(--neg)" stroke-width="3" stroke-dasharray="7 4" marker-end="url(#ovN)" class=""/></g>
+<text x="352" y="408" font-size="11.5" class="mono" font-weight="700" fill="var(--accent)">w_in[king]</text>
+<text x="350" y="308" text-anchor="end" font-size="11.5" class="mono" font-weight="700" fill="var(--pos)">w_out[sits]</text>
+<text x="370" y="470" font-size="11.5" class="mono" font-weight="700" fill="var(--neg)">w_out[pizza]</text>
+<text x="330" y="506" text-anchor="middle" font-size="11.5"><tspan fill="var(--pos)" font-weight="700">yes</tspan>: pull together · <tspan fill="var(--neg)" font-weight="700">no</tspan>: push apart</text>
+<text x="34" y="464" font-size="11.5" font-weight="600">Loss falls</text>
+<line x1="34" y1="534" x2="164" y2="534" class="grid"/>
+<path d="M34.0 471.5 L39.2 499.5 L44.4 509.3 L49.6 511.8 L54.8 512.9 L60.0 514.5 L65.2 515.0 L70.4 516.5 L75.6 517.5 L80.8 518.3 L86.0 519.4 L91.2 520.3 L96.4 521.6 L101.6 522.0 L106.8 523.0 L112.0 523.5 L117.2 524.4 L122.4 525.1 L127.6 525.6 L132.8 526.0 L138.0 526.3 L143.2 527.0 L148.4 526.5 L153.6 527.2 L158.8 527.1 L164.0 527.6" fill="none" stroke="var(--accent)" stroke-width="2.2" class="ov-loss"/>
+<text x="170" y="482" font-size="10.5" class="muted mono">4.12</text>
+<text x="170" y="532" font-size="10.5" class="muted mono">1.32</text>
+<text x="34" y="550" font-size="10.5" class="muted">right answers: 50% → 80%</text>
+<path d="M478 400 L500 400" stroke="var(--muted)" stroke-width="2" fill="none" marker-end="url(#ovM)"/>
+<rect x="502" y="244" width="206" height="326" rx="14" fill="var(--surface)" stroke="var(--line)" stroke-width="1.5"/>
+<circle cx="524" cy="268" r="11" fill="var(--accent)"/><text x="524" y="272.5" text-anchor="middle" font-size="13" font-weight="700" fill="var(--surface)">5</text>
+<text x="542" y="273" font-size="14" font-weight="700">Embeddings</text>
+<text x="542" y="290" font-size="11" class="muted">keep w_in; similar words</text>
+<text x="542" y="304" font-size="11" class="muted">now point the same way</text>
+<line x1="513" y1="430" x2="697" y2="430" class="grid"/><line x1="605" y1="320" x2="605" y2="540" class="grid"/>
+<g class="ov-word" style="--r0:-150deg;animation-delay:0.00s"><line x1="605.0" y1="430.0" x2="674.9" y2="367.1" stroke="var(--violet)" stroke-width="2.2" stroke-dasharray="" marker-end="url(#ovV)" class=""/></g>
+<text x="682.3" y="364.4" text-anchor="start" font-size="10.5" font-weight="600" fill="var(--violet)" class="ov-label">king</text>
+<g class="ov-word" style="--r0:120deg;animation-delay:0.05s"><line x1="605.0" y1="430.0" x2="635.7" y2="367.1" stroke="var(--violet)" stroke-width="2.2" stroke-dasharray="" marker-end="url(#ovV)" class=""/></g>
+<text x="640.1" y="362.1" text-anchor="start" font-size="10.5" font-weight="600" fill="var(--violet)" class="ov-label">queen</text>
+<g class="ov-word" style="--r0:-70deg;animation-delay:0.10s"><line x1="605.0" y1="430.0" x2="614.4" y2="340.5" stroke="var(--violet)" stroke-width="2.2" stroke-dasharray="" marker-end="url(#ovV)" class=""/></g>
+<text x="615.5" y="334.5" text-anchor="middle" font-size="10.5" font-weight="600" fill="var(--violet)" class="ov-label">prince</text>
+<g class="ov-word" style="--r0:160deg;animation-delay:0.15s"><line x1="605.0" y1="430.0" x2="582.8" y2="361.5" stroke="var(--accent)" stroke-width="2.2" stroke-dasharray="" marker-end="url(#ovA)" class=""/></g>
+<text x="579.7" y="356.0" text-anchor="end" font-size="10.5" font-weight="600" fill="var(--accent)" class="ov-label">man</text>
+<g class="ov-word" style="--r0:-110deg;animation-delay:0.20s"><line x1="605.0" y1="430.0" x2="544.8" y2="363.1" stroke="var(--accent)" stroke-width="2.2" stroke-dasharray="" marker-end="url(#ovA)" class=""/></g>
+<text x="538.1" y="359.7" text-anchor="end" font-size="10.5" font-weight="600" fill="var(--accent)" class="ov-label">woman</text>
+<g class="ov-word" style="--r0:95deg;animation-delay:0.25s"><line x1="605.0" y1="430.0" x2="521.6" y2="450.8" stroke="var(--pos)" stroke-width="2.2" stroke-dasharray="" marker-end="url(#ovP)" class=""/></g>
+<text x="511.9" y="457.2" text-anchor="end" font-size="10.5" font-weight="600" fill="var(--pos)" class="ov-label">cat</text>
+<g class="ov-word" style="--r0:-160deg;animation-delay:0.30s"><line x1="605.0" y1="430.0" x2="547.0" y2="469.1" stroke="var(--pos)" stroke-width="2.2" stroke-dasharray="" marker-end="url(#ovP)" class=""/></g>
+<text x="538.7" y="478.7" text-anchor="end" font-size="10.5" font-weight="600" fill="var(--pos)" class="ov-label">dog</text>
+<g class="ov-word" style="--r0:60deg;animation-delay:0.35s"><line x1="605.0" y1="430.0" x2="555.8" y2="503.0" stroke="var(--pos)" stroke-width="2.2" stroke-dasharray="" marker-end="url(#ovP)" class=""/></g>
+<text x="550.2" y="515.2" text-anchor="end" font-size="10.5" font-weight="600" fill="var(--pos)" class="ov-label">kitten</text>
+<g class="ov-word" style="--r0:140deg;animation-delay:0.40s"><line x1="605.0" y1="430.0" x2="664.7" y2="491.9" stroke="var(--neg)" stroke-width="2.2" stroke-dasharray="" marker-end="url(#ovN)" class=""/></g>
+<text x="671.7" y="503.1" text-anchor="start" font-size="10.5" font-weight="600" fill="var(--neg)" class="ov-label">pizza</text>
+<g class="ov-word" style="--r0:-90deg;animation-delay:0.45s"><line x1="605.0" y1="430.0" x2="671.8" y2="457.0" stroke="var(--neg)" stroke-width="2.2" stroke-dasharray="" marker-end="url(#ovN)" class=""/></g>
+<text x="681.0" y="464.7" text-anchor="start" font-size="10.5" font-weight="600" fill="var(--neg)" class="ov-label">pasta</text>
+<text x="605" y="560" text-anchor="middle" font-size="10.5" class="muted">random at first → grouped by meaning</text>
+<text x="360" y="596" text-anchor="middle" font-size="12.5" font-weight="600">Words that keep the same company end up pointing the same way.</text>
+</svg>
+<figcaption><span class="fig-label">Fig. 2.</span> The whole of <code>train_skip_gram</code> at a glance. (1) Start from plain sentences. (2) Split each one into tokens and slide a window along it. (3) Every token within the window of a target makes a real-neighbour pair. (4) For each pair, ask "real neighbour?" about the true context and about 5 random tokens, and nudge the vectors: real pairs pulled together, random ones pushed apart. Repeat for every pair, over many epochs. (5) Keep the target vectors (<code>w_in</code>). Words that keep the same company now point the same way. Stage 5 is a tidy sketch; your real vectors are messier (<a href="#fig-22">Fig. 22</a>). The rest of this page takes each step in turn.</figcaption>
+</figure>
+
 <!-- ============================================================ -->
 <h2 id="overview">2. The whole function at a glance</h2>
 <div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L632-L761" target="_blank" rel="noopener"><span class="src-name">train_skip_gram</span><span class="src-loc">embed.py lines 632–761</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L235-L240" target="_blank" rel="noopener"><span class="src-name">TrainingOptions</span><span class="src-loc">embed.py lines 235–240</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L243-L288" target="_blank" rel="noopener"><span class="src-name">InitResult / EpochResult / TrainEmbedResult</span><span class="src-loc">embed.py lines 243–288</span></a></div>
 
 <p><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L632-L761" target="_blank" rel="noopener"><code>train_skip_gram</code></a> is a <em>generator</em>: it <code>yield</code>s results as it goes, which is why a caller sees three kinds of result. Here is the flow, with the helper method that does each step:</p>
 
-<figure id="fig-2">
+<figure id="fig-3">
 <svg viewBox="0 0 720 560" role="img" aria-label="Flow diagram of train_skip_gram">
   <g font-size="13">
     <!-- setup -->
@@ -282,7 +432,7 @@ p.muted { color: var(--muted); }
     <path d="M350 525 h18" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/>
   </g>
 </svg>
-<figcaption><span class="fig-label">Fig. 2.</span> Click any box to open its code. The 🎲 marks every place a random number is drawn. All of them come from one seeded generator, which is covered in <a href="#random">section 12</a>.</figcaption>
+<figcaption><span class="fig-label">Fig. 3.</span> Click any box to open its code. The 🎲 marks every place a random number is drawn. All of them come from one seeded generator, which is covered in <a href="#random">section 12</a>.</figcaption>
 </figure>
 
 <p>The heart of it is the loop: go through every training pair, nudge some vectors a tiny amount, repeat the whole thing for many epochs. Everything else is setup and reporting.</p>
@@ -293,9 +443,9 @@ p.muted { color: var(--muted); }
 
 <p>The code can't work with words directly, so first each sentence of <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L26-L149" target="_blank" rel="noopener"><code>CORPUS</code></a> is split into BPE tokens and each token is replaced by its <strong>index</strong> in the vocabulary. The vocabulary is sorted by frequency, so index 0 is the most common token. Here are real examples from your corpus:</p>
 
-<figure id="fig-3">
+<figure id="fig-4">
 <div id="tokenExamples"></div>
-<figcaption><span class="fig-label">Fig. 3.</span> Top line: the BPE token. Bottom line: its vocabulary index. Note that <code>mat</code> isn't in the vocabulary, so it splits into <code>m</code> + <code>at</code> (<a href="#mat-vs-cat">why?</a>). Whole words that are common enough, like <code>princess</code>, are single tokens.</figcaption>
+<figcaption><span class="fig-label">Fig. 4.</span> Top line: the BPE token. Bottom line: its vocabulary index. Note that <code>mat</code> isn't in the vocabulary, so it splits into <code>m</code> + <code>at</code> (<a href="#mat-vs-cat">why?</a>). Whole words that are common enough, like <code>princess</code>, are single tokens.</figcaption>
 </figure>
 
 <pre><span class="c"># train_skip_gram</span>
@@ -309,9 +459,9 @@ sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span clas
 
 <p>It comes down to how often each word appears in the text the tokenizer learned from. <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/bpe.py#L241-L287" target="_blank" rel="noopener"><code>train_bpe</code></a> starts with every word split into single letters. Then, step by step, it finds the most frequent pair of neighbouring tokens in the whole corpus and merges that pair into a new token. Pairs that occur often get merged; rare ones don't.</p>
 
-<figure id="fig-4">
+<figure id="fig-5">
 <svg viewBox="0 0 720 180" role="img" aria-label="cat is merged into one token, mat stays as m plus at"><text x="20" y="28" font-weight="700" font-size="14">cat</text><text x="56" y="28" class="muted" font-size="13">(11 times in CORPUS, plus "cats" twice)</text><rect x="20" y="40" width="29" height="30" rx="6" class="box"/><text x="34.5" y="60" text-anchor="middle" font-size="15" class="mono" font-weight="600">c</text><rect x="55" y="40" width="29" height="30" rx="6" class="box"/><text x="69.5" y="60" text-anchor="middle" font-size="15" class="mono" font-weight="600">a</text><rect x="90" y="40" width="29" height="30" rx="6" class="box"/><text x="104.5" y="60" text-anchor="middle" font-size="15" class="mono" font-weight="600">t</text><text x="133" y="60" class="muted" font-size="13">→ #6 a+t →</text><rect x="225" y="40" width="29" height="30" rx="6" class="box"/><text x="239.5" y="60" text-anchor="middle" font-size="15" class="mono" font-weight="600">c</text><rect x="260" y="40" width="40" height="30" rx="6" class="box-accent"/><text x="280.0" y="60" text-anchor="middle" font-size="15" class="mono" font-weight="600">at</text><text x="314" y="60" class="muted" font-size="13">→ #18 c+at →</text><rect x="418" y="40" width="51" height="30" rx="6" class="box-pos"/><text x="443.5" y="60" text-anchor="middle" font-size="15" class="mono" font-weight="600">cat</text><text x="483" y="60" font-size="13" fill="var(--pos)" font-weight="600">one token</text><text x="20" y="118" font-weight="700" font-size="14">mat</text><text x="58" y="118" class="muted" font-size="13">(once in CORPUS)</text><rect x="20" y="130" width="29" height="30" rx="6" class="box"/><text x="34.5" y="150" text-anchor="middle" font-size="15" class="mono" font-weight="600">m</text><rect x="55" y="130" width="29" height="30" rx="6" class="box"/><text x="69.5" y="150" text-anchor="middle" font-size="15" class="mono" font-weight="600">a</text><rect x="90" y="130" width="29" height="30" rx="6" class="box"/><text x="104.5" y="150" text-anchor="middle" font-size="15" class="mono" font-weight="600">t</text><text x="133" y="150" class="muted" font-size="13">→ #6 a+t →</text><rect x="225" y="130" width="29" height="30" rx="6" class="box-neg"/><text x="239.5" y="150" text-anchor="middle" font-size="15" class="mono" font-weight="600">m</text><rect x="260" y="130" width="40" height="30" rx="6" class="box-neg"/><text x="280.0" y="150" text-anchor="middle" font-size="15" class="mono" font-weight="600">at</text><text x="316" y="144" font-size="13" fill="var(--neg)" font-weight="600">m+at occurs only once, so</text><text x="316" y="161" font-size="13" fill="var(--neg)" font-weight="600">train_bpe stops here: two tokens</text></svg>
-<figcaption><span class="fig-label">Fig. 4.</span> The merge numbers are the order in which <code>train_bpe</code> learned each merge. "cat" is common enough for both merges; "mat" only gets the first one.</figcaption>
+<figcaption><span class="fig-label">Fig. 5.</span> The merge numbers are the order in which <code>train_bpe</code> learned each merge. "cat" is common enough for both merges; "mat" only gets the first one.</figcaption>
 </figure>
 
 <table>
@@ -338,13 +488,13 @@ sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span clas
 
 <p><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L367-L385" target="_blank" rel="noopener"><code>build_training_pairs</code></a> slides a <strong>window</strong> over each sentence. Each token in turn is the <em>target</em>, and every token within <code>window_size</code> positions of it is a <em>context</em>. Each (target, context) combination becomes one training pair: a piece of evidence that these two tokens keep each other's company.</p>
 
-<figure id="fig-5">
+<figure id="fig-6">
 <svg id="windowSvg" viewBox="0 0 720 210" role="img" aria-label="Sliding window over the sentence the cat sat on the mat"></svg>
 <div class="play" style="margin-top:8px">
   <label for="windowPos">Move the target along the sentence (window_size = 2):</label>
   <input type="range" id="windowPos" min="0" max="6" value="2">
 </div>
-<figcaption><span class="fig-label">Fig. 5.</span> With <code>window_size = 2</code>, the target <span id="windowTarget"></span> pairs with up to two tokens on each side. The window never crosses into the next sentence.</figcaption>
+<figcaption><span class="fig-label">Fig. 6.</span> With <code>window_size = 2</code>, the target <span id="windowTarget"></span> pairs with up to two tokens on each side. The window never crosses into the next sentence.</figcaption>
 </figure>
 
 <p>Doing that for every position in "the cat sat on the mat" gives 22 pairs:</p>
@@ -368,7 +518,7 @@ sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span clas
 
 <p><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L465-L494" target="_blank" rel="noopener"><code>init_weights</code></a> creates two tables, each with one row per token (286 rows) and one column per dimension (32 columns):</p>
 
-<figure id="fig-6">
+<figure id="fig-7">
 <svg viewBox="0 0 720 270" role="img" aria-label="The two weight tables w_in and w_out">
   <g font-size="13">
     <text x="20" y="22" font-weight="700">w_in</text><text x="62" y="22" class="muted">(target vectors: these become the embeddings)</text>
@@ -377,7 +527,7 @@ sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span clas
     <g id="matOut" transform="translate(430,36)"></g>
   </g>
 </svg>
-<figcaption><span class="fig-label">Fig. 6.</span> Every row is one token's <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L291-L331" target="_blank" rel="noopener"><code>EmbeddingVector</code></a>. A token has <em>two</em> vectors: one used when it's the target (<a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_in</code></a>) and one used when it's the context (<a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_out</code></a>). Only <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_in</code></a> is kept as the embedding at the end. The colours illustrate the kind of starting values: small random numbers, some positive (blue) and some negative (red).</figcaption>
+<figcaption><span class="fig-label">Fig. 7.</span> Every row is one token's <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L291-L331" target="_blank" rel="noopener"><code>EmbeddingVector</code></a>. A token has <em>two</em> vectors: one used when it's the target (<a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_in</code></a>) and one used when it's the context (<a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_out</code></a>). Only <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_in</code></a> is kept as the embedding at the end. The colours illustrate the kind of starting values: small random numbers, some positive (blue) and some negative (red).</figcaption>
 </figure>
 
 <h3 id="target-vs-context">Target vs context: two roles, two vectors</h3>
@@ -386,22 +536,24 @@ sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span clas
 <p>"Target" and "context" are <strong>roles in a pair</strong>, not kinds of token. The <strong>target</strong> is the token at the centre of the window, the one being asked about. The <strong>context</strong> is one of its neighbours within <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L382-L384" target="_blank" rel="noopener"><code>window_size</code></a>. Each pair asks: <em>"Given this target, is this a token that appears around it?"</em> That's where the name comes from: skip-gram predicts the surrounding words from the centre word. (Its sister method, CBOW, does the reverse.)</p>
 
 <h3 id="two-relations">The linguistic rationale: words relate in two ways</h3>
-<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L553" target="_blank" rel="noopener"><span class="src-name">w_in · w_out: the training score</span><span class="src-loc">embed.py line 553</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L682-L696" target="_blank" rel="noopener"><span class="src-name">w_in vs w_in: nearest neighbours</span><span class="src-loc">embed.py lines 682–696</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L698-L707" target="_blank" rel="noopener"><span class="src-name">w_in vs w_in: similarities</span><span class="src-loc">embed.py lines 698–707</span></a></div>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L553" target="_blank" rel="noopener"><span class="src-name">w_in[w] · w_out[c]: the training score</span><span class="src-loc">embed.py line 553</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L682-L696" target="_blank" rel="noopener"><span class="src-name">w_in[w] vs w_in[other words]: neighbours</span><span class="src-loc">embed.py lines 682–696</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L698-L707" target="_blank" rel="noopener"><span class="src-name">w_in[w1] vs w_in[w2]: similarities</span><span class="src-loc">embed.py lines 698–707</span></a></div>
 
 <p>Why give every token two vectors in the first place? Because <strong>words relate to each other in two different ways</strong>, and the two vectors give the model a separate place to learn each one. Linguists have distinguished these two relations since Ferdinand de Saussure, over a century ago:</p>
 
-<figure id="fig-7">
+<figure id="fig-8">
 <svg viewBox="0 0 720 330" role="img" aria-label="Syntagmatic axis runs along the sentence; paradigmatic axis runs through words that could fill the same slot"><rect x="200" y="56" width="100" height="236" rx="12" fill="var(--accent-soft)" stroke="var(--accent)" stroke-dasharray="5 4"/><rect x="70" y="70" width="100" height="40" rx="8" class="box-pos"/><text x="120" y="96" text-anchor="middle" class="mono" font-weight="700" font-size="15">the</text><rect x="200" y="70" width="100" height="40" rx="8" class="box-accent"/><text x="250" y="96" text-anchor="middle" class="mono" font-weight="700" font-size="15">king</text><rect x="330" y="70" width="100" height="40" rx="8" class="box-pos"/><text x="380" y="96" text-anchor="middle" class="mono" font-weight="700" font-size="15">was</text><rect x="470" y="70" width="100" height="40" rx="8" class="box-pos"/><text x="520" y="96" text-anchor="middle" class="mono" font-weight="700" font-size="15">crowned</text><rect x="200" y="132" width="100" height="36" rx="8" class="box"/><text x="250" y="156" text-anchor="middle" class="mono" font-size="14">queen</text><rect x="200" y="182" width="100" height="36" rx="8" class="box"/><text x="250" y="206" text-anchor="middle" class="mono" font-size="14">prince</text><rect x="200" y="232" width="100" height="36" rx="8" class="box"/><text x="250" y="256" text-anchor="middle" class="mono" font-size="14">man</text><path d="M60 40 H660" stroke="var(--pos)" stroke-width="2.5" marker-end="url(#arrP)"/><text x="60" y="30" font-size="13" font-weight="700" fill="var(--pos)">syntagmatic axis: words that go together in sequence</text><path d="M330 70 V290" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><text x="345" y="170" font-size="13" font-weight="700" fill="var(--accent)">paradigmatic axis:</text><text x="345" y="188" font-size="13" fill="var(--accent)">words that could fill the same slot</text><text x="345" y="214" font-size="12" class="muted">"the queen was crowned", "the prince</text><text x="345" y="230" font-size="12" class="muted">was crowned", "the man was crowned"</text><text x="360" y="320" text-anchor="middle" font-size="12" class="muted">"the man was crowned king", "the woman was crowned queen": both are real CORPUS sentences</text></svg>
-<figcaption><span class="fig-label">Fig. 7.</span> Reading along the sentence gives the <strong>syntagmatic</strong> relation: <em>was</em> and <em>crowned</em> go with <em>king</em>. Reading down the slot gives the <strong>paradigmatic</strong> relation: <em>queen</em>, <em>prince</em> and <em>man</em> could replace <em>king</em>.</figcaption>
+<figcaption><span class="fig-label">Fig. 8.</span> Reading along the sentence gives the <strong>syntagmatic</strong> relation: <em>was</em> and <em>crowned</em> go with <em>king</em>. Reading down the slot gives the <strong>paradigmatic</strong> relation: <em>queen</em>, <em>prince</em> and <em>man</em> could replace <em>king</em>.</figcaption>
 </figure>
 
 <table>
 <thead><tr><th>Relation</th><th>Question it answers</th><th>Example</th><th>Learned by</th></tr></thead>
 <tbody>
-<tr><td><strong>Syntagmatic</strong> (combination)</td><td>Which words go <em>next to</em> this word?</td><td>king → <em>crowned</em>, <em>was</em>, <em>became</em></td><td><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L553" target="_blank" rel="noopener"><code>w_in[king] · w_out[x]</code></a></td></tr>
-<tr><td><strong>Paradigmatic</strong> (substitution)</td><td>Which words could <em>replace</em> this word?</td><td>king → <em>queen</em>, <em>prince</em></td><td><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L692" target="_blank" rel="noopener"><code>w_in[king] · w_in[x]</code></a></td></tr>
+<tr><td><strong>Syntagmatic</strong> (combination)</td><td>Which words go <em>next to</em> this word?</td><td>king → <em>crowned</em>, <em>was</em>, <em>became</em></td><td><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L553" target="_blank" rel="noopener"><code>w_in[king] · w_out[crowned]</code></a></td></tr>
+<tr><td><strong>Paradigmatic</strong> (substitution)</td><td>Which words could <em>replace</em> this word?</td><td>king → <em>queen</em>, <em>prince</em></td><td><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L692" target="_blank" rel="noopener"><code>w_in[king] · w_in[queen]</code></a></td></tr>
 </tbody>
 </table>
+
+<p><strong>Why compare two vectors instead of reading one?</strong> A single vector such as <code>w_in[king]</code> is 32 numbers, none of which means anything by itself: there's no "royalty" or "gender" position to read. Training only ever uses dot products between vectors, and rotating every vector in both tables by the same amount leaves all dot products unchanged, so the individual numbers are arbitrary. Only the angles and lengths <em>between</em> vectors are fixed by training, just as a city's map coordinates depend on how the map is drawn but the distance between two cities doesn't. So every question about words compares two of them, and each <code>·</code> above is a dot product between two different words' vectors, never a vector with itself.</p>
 
 <p>Crucially, <strong>the two relations point to different words.</strong> The words that are similar to "cat" (dog, mouse) are mostly <em>not</em> the words that appear next to "cat" (the, sat, chased). A word is almost never next to its substitutes (you don't say "the cat dog sat"), and almost never a substitute for its neighbours ("the" can't replace "cat").</p>
 
@@ -410,8 +562,8 @@ sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span clas
 <p>Suppose each token had only one vector, and the score were <code>sigmoid(v_cat · v_x)</code>. Training would have to make <code>v_cat · v_the</code> large, because "the" appears next to "cat" constantly. But that same dot product is also what we'd use to measure similarity, so "cat" would come out <em>similar</em> to "the". A single vector per word can't keep "goes next to" separate from "is like". It mixes the two relations up.</p>
 <p>With two tables, the jobs are split:</p>
 <ul>
-<li><strong><code>w_in</code> · <code>w_out</code></strong> (target against context) learns the syntagmatic relation. It's the training signal: "does x appear next to this word?"</li>
-<li><strong><code>w_in</code> · <code>w_in</code></strong> (target against target) gives the paradigmatic relation for free. Two words whose target vectors are pulled towards the same context vectors end up alike.</li>
+<li><strong><code>w_in[w] · w_out[c]</code></strong>, one word's target vector against another word's context vector, learns the syntagmatic relation. It's the training signal: "does x appear next to this word?"</li>
+<li><strong><code>w_in[w1] · w_in[w2]</code></strong>, the target vectors of two different words, gives the paradigmatic relation for free. Two words whose target vectors are pulled towards the same context vectors end up alike.</li>
 </ul>
 
 <h3>Your trained model shows the split</h3>
@@ -478,9 +630,9 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 
 <p><strong>2. This is how similar words become similar.</strong> In your corpus, "king" and "queen" appear in the same window only once ("the king and queen rule the kingdom"). But they appear in parallel sentences, such as "the king wore a golden crown" and "the queen wore a silver crown", so as targets they share many of the same contexts: <code>sits</code>, <code>wore</code>, <code>crowned</code>, <code>became</code>, <code>will</code>, and more. Training keeps pulling <code>w_in[king]</code> towards those context vectors in <code>w_out</code>, and does exactly the same to <code>w_in[queen]</code>. Because both are pulled towards the same points, they end up near each other.</p>
 
-<figure id="fig-8">
+<figure id="fig-9">
 <svg viewBox="0 0 720 300" role="img" aria-label="w_in[king] and w_in[queen] are both pulled towards the same context vectors in w_out"><text x="110" y="24" text-anchor="middle" font-weight="700" font-size="14">w_in</text><text x="110" y="42" text-anchor="middle" class="muted" font-size="12">target vectors</text><text x="560" y="24" text-anchor="middle" font-weight="700" font-size="14">w_out</text><text x="560" y="42" text-anchor="middle" class="muted" font-size="12">context vectors</text><rect x="50" y="105" width="120" height="40" rx="8" class="box-accent"/><text x="110" y="131" text-anchor="middle" class="mono" font-weight="700" font-size="15">king</text><rect x="50" y="205" width="120" height="40" rx="8" class="box-accent"/><text x="110" y="231" text-anchor="middle" class="mono" font-weight="700" font-size="15">queen</text><rect x="500" y="62" width="120" height="34" rx="7" class="box-pos"/><text x="560" y="84" text-anchor="middle" class="mono" font-weight="600" font-size="14">sits</text><path d="M170 125 C 320 125, 350 79, 498 79" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><path d="M170 225 C 320 225, 350 79, 498 79" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><rect x="500" y="108" width="120" height="34" rx="7" class="box-pos"/><text x="560" y="130" text-anchor="middle" class="mono" font-weight="600" font-size="14">wore</text><path d="M170 125 C 320 125, 350 125, 498 125" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><path d="M170 225 C 320 225, 350 125, 498 125" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><rect x="500" y="154" width="120" height="34" rx="7" class="box-pos"/><text x="560" y="176" text-anchor="middle" class="mono" font-weight="600" font-size="14">crowned</text><path d="M170 125 C 320 125, 350 171, 498 171" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><path d="M170 225 C 320 225, 350 171, 498 171" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><rect x="500" y="200" width="120" height="34" rx="7" class="box-pos"/><text x="560" y="222" text-anchor="middle" class="mono" font-weight="600" font-size="14">became</text><path d="M170 125 C 320 125, 350 217, 498 217" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><path d="M170 225 C 320 225, 350 217, 498 217" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><rect x="500" y="246" width="120" height="34" rx="7" class="box-pos"/><text x="560" y="268" text-anchor="middle" class="mono" font-weight="600" font-size="14">will</text><path d="M170 125 C 320 125, 350 263, 498 263" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><path d="M170 225 C 320 225, 350 263, 498 263" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><text x="110" y="280" text-anchor="middle" font-size="13" font-weight="600" fill="var(--accent)">⇒ end up close together</text><text x="560" y="300" text-anchor="middle" font-size="12" class="muted">shared contexts in CORPUS (window 2)</text></svg>
-<figcaption><span class="fig-label">Fig. 8.</span> Real shared contexts of "king" and "queen" in <code>CORPUS</code> (window 2). Every arrow is a pull that happens each time that pair is trained. Two target vectors pulled towards the same context vectors end up close together. In your 100-epoch run, king/queen cosine similarity reached 0.96.</figcaption>
+<figcaption><span class="fig-label">Fig. 9.</span> Real shared contexts of "king" and "queen" in <code>CORPUS</code> (window 2). Every arrow is a pull that happens each time that pair is trained. Two target vectors pulled towards the same context vectors end up close together. In your 100-epoch run, king/queen cosine similarity reached 0.96.</figcaption>
 </figure>
 
 <div class="callout pos"><p><strong>The key idea:</strong> a target vector comes to mean "the kinds of neighbours I have". Two words with similar neighbours get similar target vectors, even if they rarely or never appear together. That is what an embedding is.</p></div>
@@ -496,9 +648,9 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 
 <p>The key is the <code>− 0.5</code> in <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>init_weights</code></a>: <code>(rand() − 0.5) * scale</code>. <code>rand()</code> gives a number between 0 and 1, and subtracting 0.5 shifts it to between −0.5 and +0.5, so the starting weights are spread evenly around zero. There are three reasons this matters.</p>
 
-<figure id="fig-9">
+<figure id="fig-10">
 <svg viewBox="0 0 720 320" role="img" aria-label="Zero-centred random vectors point in all directions; positive-only vectors crowd into one corner"><text x="180" y="22" text-anchor="middle" font-weight="700" font-size="14">Centred on zero (your code)</text><text x="180" y="40" text-anchor="middle" class="muted" font-size="12.5">rand() − 0.5: values can be + or −</text><line x1="65" y1="170" x2="295" y2="170" class="grid" stroke-width="1.5"/><line x1="180" y1="55" x2="180" y2="285" class="grid" stroke-width="1.5"/><line x1="180" y1="170" x2="268.0" y2="151.3" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><line x1="180" y1="170" x2="214.0" y2="103.2" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><line x1="180" y1="170" x2="135.4" y2="86.1" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><line x1="180" y1="170" x2="113.8" y2="147.2" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><line x1="180" y1="170" x2="100.2" y2="207.2" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><line x1="180" y1="170" x2="148.7" y2="243.6" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><line x1="180" y1="170" x2="211.5" y2="256.5" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><line x1="180" y1="170" x2="249.5" y2="205.4" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><text x="540" y="22" text-anchor="middle" font-weight="700" font-size="14">Positive only</text><text x="540" y="40" text-anchor="middle" class="muted" font-size="12.5">rand(): values are all +</text><rect x="540" y="60" width="110" height="110" fill="var(--neg-soft)" opacity="0.5"/><text x="644" y="74" text-anchor="end" font-size="11" class="muted">all values &gt; 0</text><line x1="425" y1="170" x2="655" y2="170" class="grid" stroke-width="1.5"/><line x1="540" y1="55" x2="540" y2="285" class="grid" stroke-width="1.5"/><line x1="540" y1="170" x2="629.3" y2="147.7" stroke="var(--neg)" stroke-width="2.5" marker-end="url(#arrN)"/><line x1="540" y1="170" x2="611.3" y2="133.7" stroke="var(--neg)" stroke-width="2.5" marker-end="url(#arrN)"/><line x1="540" y1="170" x2="619.3" y2="112.4" stroke="var(--neg)" stroke-width="2.5" marker-end="url(#arrN)"/><line x1="540" y1="170" x2="600.1" y2="109.9" stroke="var(--neg)" stroke-width="2.5" marker-end="url(#arrN)"/><line x1="540" y1="170" x2="597.9" y2="95.9" stroke="var(--neg)" stroke-width="2.5" marker-end="url(#arrN)"/><line x1="540" y1="170" x2="577.8" y2="101.8" stroke="var(--neg)" stroke-width="2.5" marker-end="url(#arrN)"/><line x1="540" y1="170" x2="570.8" y2="85.4" stroke="var(--neg)" stroke-width="2.5" marker-end="url(#arrN)"/><line x1="540" y1="170" x2="554.6" y2="87.3" stroke="var(--neg)" stroke-width="2.5" marker-end="url(#arrN)"/><text x="180" y="306" text-anchor="middle" font-size="13">point every which way → unrelated</text><text x="540" y="306" text-anchor="middle" font-size="13">all crowd into one corner → falsely similar</text></svg>
-<figcaption><span class="fig-label">Fig. 9.</span> A 2-D sketch of eight random starting vectors. With values centred on zero they point in all directions. With positive-only values they all fall in one corner, all leaning the same way. In 32 dimensions the effect is the same, just harder to draw.</figcaption>
+<figcaption><span class="fig-label">Fig. 10.</span> A 2-D sketch of eight random starting vectors. With values centred on zero they point in all directions. With positive-only values they all fall in one corner, all leaning the same way. In 32 dimensions the effect is the same, just harder to draw.</figcaption>
 </figure>
 
 <p><strong>1. Random vectors should start out unrelated.</strong> What matters about an embedding is its <em>direction</em>, and similarity is measured by the angle between vectors. With values centred on zero, random vectors in 32 dimensions are nearly at right angles to each other, so their cosine similarity is close to 0. Your run confirms this: before training, king/queen was 0.18, man/woman −0.24 and cat/dog −0.03. With positive-only values, every vector would lean towards the same diagonal direction, (1, 1, …, 1), and two random vectors would have an expected cosine similarity of about <strong>0.75</strong>. Before seeing any data, the model would already "think" every word was similar to every other word.</p>
@@ -606,7 +758,7 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 <pre>dot = t[0]×o[0] + t[1]×o[1] + … + t[31]×o[31]</pre>
 <div class="pre-src"><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L314-L318" target="_blank" rel="noopener"><span class="src-name">EmbeddingVector.dot</span><span class="src-loc">embed.py lines 314–318</span></a></div>
 
-<figure id="fig-10">
+<figure id="fig-11">
 <svg viewBox="0 0 720 190" role="img" aria-label="Dot product is large when vectors point the same way, zero when perpendicular, negative when opposite">
   <g font-size="13">
     <g transform="translate(120,120)">
@@ -629,7 +781,7 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
     </g>
   </g>
 </svg>
-<figcaption><span class="fig-label">Fig. 10.</span> The dot product measures agreement. Longer vectors also give bigger dot products, which is why vectors grow during training (see <a href="#refine">section 11</a>).</figcaption>
+<figcaption><span class="fig-label">Fig. 11.</span> The dot product measures agreement. Longer vectors also give bigger dot products, which is why vectors grow during training (see <a href="#refine">section 11</a>).</figcaption>
 </figure>
 
 <h3>b) The sigmoid: turn agreement into a probability</h3>
@@ -637,9 +789,9 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 <pre>score = sigmoid(dot) = 1 / (1 + e<sup>−dot</sup>)</pre>
 <div class="pre-src"><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L360-L365" target="_blank" rel="noopener"><span class="src-name">sigmoid</span><span class="src-loc">embed.py lines 360–365</span></a></div>
 
-<figure id="fig-11">
+<figure id="fig-12">
 <svg id="sigmoidSvg" viewBox="0 0 720 260" role="img" aria-label="The sigmoid curve"></svg>
-<figcaption><span class="fig-label">Fig. 11.</span> Big positive dot → score near 1 ("yes, these go together"). Big negative dot → score near 0 ("no"). A dot of 0 → score 0.5 ("no idea"). Your <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L358-L365" target="_blank" rel="noopener"><code>sigmoid</code></a> returns exactly 1 above 6 and exactly 0 below −6 to save time.</figcaption>
+<figcaption><span class="fig-label">Fig. 12.</span> Big positive dot → score near 1 ("yes, these go together"). Big negative dot → score near 0 ("no"). A dot of 0 → score 0.5 ("no idea"). Your <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L358-L365" target="_blank" rel="noopener"><code>sigmoid</code></a> returns exactly 1 above 6 and exactly 0 below −6 to save time.</figcaption>
 </figure>
 
 <p>At the start every vector is tiny, so every dot product is about 0 and every score is about 0.5. The model starts out guessing "no idea" for everything.</p>
@@ -652,7 +804,7 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 
 <p>So for every real (positive) pair, <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L564-L588" target="_blank" rel="noopener"><code>train_epoch</code></a> also makes up <strong>5 fake pairs</strong> (<a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L582" target="_blank" rel="noopener"><code>negative_samples = 5</code></a>): the same target, paired with tokens picked at random. For those the right answer is "no".</p>
 
-<figure id="fig-12">
+<figure id="fig-13">
 <svg viewBox="0 0 720 220" role="img" aria-label="One positive pair and five negative pairs">
   <g font-size="14">
     <rect x="20" y="86" width="110" height="44" rx="8" class="box-accent"/>
@@ -661,21 +813,21 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
     <g id="negFan"></g>
   </g>
 </svg>
-<figcaption><span class="fig-label">Fig. 12.</span> One real context (label 1, should score near 1) and five random tokens (label 0, should score near 0). A random token that happens to be the real context is skipped.</figcaption>
+<figcaption><span class="fig-label">Fig. 13.</span> One real context (label 1, should score near 1) and five random tokens (label 0, should score near 0). A random token that happens to be the real context is skipped.</figcaption>
 </figure>
 
 <h3>Which random tokens? The negative-sampling table</h3>
 <p>Negatives aren't picked uniformly. <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L387-L439" target="_blank" rel="noopener"><code>build_negative_sampling_table</code></a> gives each token a probability based on its frequency raised to the power <span class="num">0.75</span> (a trick from the original word2vec paper). Common tokens are still picked more often, but the 0.75 flattens things out so rare tokens get more of a chance than their raw count would give them:</p>
 
-<figure id="fig-13">
+<figure id="fig-14">
 <svg id="negBars" viewBox="0 0 720 300" role="img" aria-label="Raw frequency share vs negative sampling probability"></svg>
 <div class="legend"><span><i style="background:var(--muted)"></i>raw share of the text</span><span><i style="background:var(--accent)"></i>chance of being picked as a negative</span></div>
-<figcaption><span class="fig-label">Fig. 13.</span> Real values from your vocabulary. The most common token, <code>e</code>, is 7.8% of the text but only 4.6% of negatives. <code>king</code> is 0.25% of the text but 0.35% of negatives.</figcaption>
+<figcaption><span class="fig-label">Fig. 14.</span> Real values from your vocabulary. The most common token, <code>e</code>, is 7.8% of the text but only 4.6% of negatives. <code>king</code> is 0.25% of the text but 0.35% of negatives.</figcaption>
 </figure>
 
 <p>To actually pick one, the table stores a running total. Each token owns a stretch of the line from 0 to 1 as wide as its probability. <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L441-L463" target="_blank" rel="noopener"><code>sample_negative</code></a> draws a random number <em>r</em> and finds whose stretch it lands in (using a binary search):</p>
 
-<figure id="fig-14">
+<figure id="fig-15">
 <svg viewBox="0 0 720 150" role="img" aria-label="Cumulative table as a number line">
   <g font-size="13">
     <rect x="40" y="50" width="529" height="40" class="box-accent"/>
@@ -694,7 +846,7 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
     <text x="360" y="14" text-anchor="middle" fill="var(--accent)" font-weight="600">r = 0.50 → the</text>
   </g>
 </svg>
-<figcaption><span class="fig-label">Fig. 14.</span> A three-token example (the one in the code comments). Wider stretch = more likely to be hit by a random r.</figcaption>
+<figcaption><span class="fig-label">Fig. 15.</span> A three-token example (the one in the code comments). Wider stretch = more likely to be hit by a random r.</figcaption>
 </figure>
 
 <!-- ============================================================ -->
@@ -735,7 +887,7 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 <h3>What "nudge" means geometrically</h3>
 <p><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L557" target="_blank" rel="noopener"><code>target_vector.add_scaled(other_vector, grad)</code></a> adds <code>grad × other_vector</code> to the target. If <code>grad</code> is positive, the target moves a little <em>towards</em> the other vector; if negative, a little <em>away</em> from it. The other vector gets the mirror-image update. That's why a copy of the target is taken first: both updates must use the values from before either one changed.</p>
 
-<figure id="fig-15">
+<figure id="fig-16">
 <svg viewBox="0 0 720 260" role="img" aria-label="Positive update pulls vectors together, negative update pushes them apart">
   <g font-size="13">
     <g transform="translate(150,200)">
@@ -766,7 +918,7 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
     </g>
   </g>
 </svg>
-<figcaption><span class="fig-label">Fig. 15.</span> Dashed: before the nudge. Solid: after. The change is greatly exaggerated here; real nudges are tiny.</figcaption>
+<figcaption><span class="fig-label">Fig. 16.</span> Dashed: before the nudge. Solid: after. The change is greatly exaggerated here; real nudges are tiny.</figcaption>
 </figure>
 
 <h3 id="nudge-sim">Watch the nudges happen</h3>
@@ -774,7 +926,7 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 
 <p>This diagram runs the <strong>exact <code>train_pair</code> formula</strong> on four vectors drawn as arrows. Solid arrows are target vectors (<code>w_in</code>) and dashed arrows are context vectors (<code>w_out</code>). Both tables hold vectors of the same size and are compared with a dot product, so they can be drawn on the same axes. Press a button to train one pair: the faint arrow shows where the vector was, and the small arrow shows the nudge, <code>grad × other_vector</code>.</p>
 
-<figure id="fig-16">
+<figure id="fig-17">
 <svg id="nudgeSimSvg" viewBox="0 0 720 470" role="img" aria-label="Interactive diagram of target and context vectors being nudged by train_pair"></svg>
 <div class="legend" id="simLegend2"></div>
 <div class="sim-controls">
@@ -801,7 +953,7 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
   <div><small>cos(king, pizza context)</small><b id="sKP">–</b></div>
 </div>
 <p class="sim-explain" id="sExplain">Press a button to train one pair.</p>
-<figcaption><span class="fig-label">Fig. 16.</span> A 2-D toy with a learning rate of 0.3, about ten times the real one, so each step is visible. Notice: a real pair's nudge always points <em>along</em> the other vector, and a negative's points directly <em>away</em> from it. Both vectors in a pair move. Press <em>Play</em> and watch king and queen, which start pointing in very different directions, swing round to point the same way, because both are pulled towards the same context, <em>crowned</em>. The arrows also get longer, as in real training (section 11).</figcaption>
+<figcaption><span class="fig-label">Fig. 17.</span> A 2-D toy with a learning rate of 0.3, about ten times the real one, so each step is visible. Notice: a real pair's nudge always points <em>along</em> the other vector, and a negative's points directly <em>away</em> from it. Both vectors in a pair move. Press <em>Play</em> and watch king and queen, which start pointing in very different directions, swing round to point the same way, because both are pulled towards the same context, <em>crowned</em>. The arrows also get longer, as in real training (section 11).</figcaption>
 </figure>
 
 <h3>A real example: the very first nudge</h3>
@@ -827,7 +979,7 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 
 <h3>Try it yourself</h3>
 <p>Drag the slider to change the dot product and see what <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L524-L562" target="_blank" rel="noopener"><code>train_pair</code></a> would compute (with <code>lr = 0.025</code>):</p>
-<figure id="fig-17">
+<figure id="fig-18">
 <div class="play">
   <label for="dotSlider">dot product: <b id="dotVal" class="num">0.00</b></label>
   <input type="range" id="dotSlider" min="-6" max="6" step="0.05" value="0">
@@ -841,7 +993,7 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
     <div><small>negative pair: loss</small><b id="rLossNeg">0.693</b></div>
   </div>
 </div>
-<figcaption><span class="fig-label">Fig. 17.</span> Notice that the right answer always means a small loss and a small nudge, and the wrong answer a big loss and a big nudge. The model learns most from its biggest mistakes.</figcaption>
+<figcaption><span class="fig-label">Fig. 18.</span> Notice that the right answer always means a small loss and a small nudge, and the wrong answer a big loss and a big nudge. The model learns most from its biggest mistakes.</figcaption>
 </figure>
 
 <!-- ============================================================ -->
@@ -909,10 +1061,10 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 <p>You can turn any loss back into a probability with e<sup>−loss</sup>. A loss of 0.693 means the model gave the right answer 50% (a coin flip); a loss of 0.105 means 90%; a loss of 2.3 means only 10%.</p>
 <p>The code never uses the loss <em>value</em> itself to make decisions; it computes it as a report card. But the nudge is tied to it exactly: <code>label − score</code> is the slope of this loss with respect to the dot product, with the sign flipped. So every nudge in <code>train_pair</code> is a small step downhill, in whichever direction makes this loss smaller.</p>
 
-<figure id="fig-18">
+<figure id="fig-19">
 <svg id="lossCurveSvg" viewBox="0 0 720 280" role="img" aria-label="Loss as a function of score for positive and negative pairs"></svg>
 <div class="legend"><span><i style="background:var(--pos)"></i>real pair: −log(score)</span><span><i style="background:var(--neg)"></i>fake pair: −log(1 − score)</span></div>
-<figcaption><span class="fig-label">Fig. 18.</span> Being confidently wrong is punished hard: a real pair scored 0.01 has a loss of 4.6. Being right gives a loss near 0. At score 0.5 ("no idea") both give 0.693.</figcaption>
+<figcaption><span class="fig-label">Fig. 19.</span> Being confidently wrong is punished hard: a real pair scored 0.01 has a loss of 4.6. Being right gives a loss near 0. At score 0.5 ("no idea") both give 0.693.</figcaption>
 </figure>
 
 <p>Why the logarithm? It's the standard way to measure probability guesses (called <em>log loss</em> or <em>cross-entropy</em>). It's gentle when you're nearly right and severe when you're confidently wrong. The <code>+ 1e-10</code> just stops <code>log(0)</code>, which would be infinite.</p>
@@ -926,9 +1078,9 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 
 <p>Here's the real loss from a 100-epoch run (vector size 32, window 2, 5 negatives, seed 42):</p>
 
-<figure id="fig-19">
+<figure id="fig-20">
 <svg id="lossRunSvg" viewBox="0 0 720 300" role="img" aria-label="Loss falling over 100 epochs"></svg>
-<figcaption><span class="fig-label">Fig. 19.</span> Fast improvement at first, then slow and steady. The small wiggles come from the random shuffle and random negatives: each epoch sees the data in a different order.</figcaption>
+<figcaption><span class="fig-label">Fig. 20.</span> Fast improvement at first, then slow and steady. The small wiggles come from the random shuffle and random negatives: each epoch sees the data in a different order.</figcaption>
 </figure>
 
 <h3>What those numbers mean</h3>
@@ -963,9 +1115,9 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 <h3>The learning rate falls over time</h3>
 <p>The learning rate <code>lr</code> controls the size of every nudge. It starts at 0.025 and falls in a straight line to 0.001 by the last epoch:</p>
 
-<figure id="fig-20">
+<figure id="fig-21">
 <svg id="lrSvg" viewBox="0 0 720 240" role="img" aria-label="Learning rate falling linearly from 0.025 to 0.001"></svg>
-<figcaption><span class="fig-label">Fig. 20.</span> Big steps early to get the rough shape quickly; small steps late to fine-tune without undoing earlier work. It's like sculpting: chisel first, sandpaper last.</figcaption>
+<figcaption><span class="fig-label">Fig. 21.</span> Big steps early to get the rough shape quickly; small steps late to fine-tune without undoing earlier work. It's like sculpting: chisel first, sandpaper last.</figcaption>
 </figure>
 
 <p>One side effect: the schedule depends on the <em>total</em> number of epochs. With 500 epochs the rate is still high at epoch 100, so the loss at epoch 100 of a 500-epoch run isn't the same as at the end of a 100-epoch run.</p>
@@ -976,19 +1128,19 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 
 <p>This is the payoff. The pictures below show the real <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_in</code></a> vectors for 16 words at six moments during the 100-epoch run. Each vector has 32 numbers, so to draw them on a flat page they've been squashed down to 2-D (using PCA, which keeps the two directions in which the vectors differ most). Each panel is scaled to fit, so compare <em>arrangements</em>, not sizes.</p>
 
-<figure id="fig-21">
+<figure id="fig-22">
 <div class="grid-panels" id="scatterPanels"></div>
 <div class="legend" id="scatterLegend"></div>
-<figcaption><span class="fig-label">Fig. 21.</span> Real <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_in</code></a> vectors, seed 42. "avg length" is the average length of the 16 vectors. Before training the words are scattered at random. By the end, related words have moved together: food and pizza far off on their own, lion, tiger and dog together, king next to queen, prince next to princess, and man, woman, boy and girl in one area. It isn't perfect: kitten and puppy sit near the people, which is what you'd expect from a small corpus.</figcaption>
+<figcaption><span class="fig-label">Fig. 22.</span> Real <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_in</code></a> vectors, seed 42. "avg length" is the average length of the 16 vectors. Before training the words are scattered at random. By the end, related words have moved together: food and pizza far off on their own, lion, tiger and dog together, king next to queen, prince next to princess, and man, woman, boy and girl in one area. It isn't perfect: kitten and puppy sit near the people, which is what you'd expect from a small corpus.</figcaption>
 </figure>
 
 <h3>Watching similarities develop</h3>
 <p>Another way to watch training is to track <strong>cosine similarity</strong>, which measures how closely two vectors point the same way (1 = same direction, 0 = unrelated, −1 = opposite) and ignores their lengths. Here are five pairs through the whole run:</p>
 
-<figure id="fig-22">
+<figure id="fig-23">
 <svg id="simSvg" viewBox="0 0 720 320" role="img" aria-label="Cosine similarity of five word pairs over training"></svg>
 <div class="legend" id="simLegend"></div>
-<figcaption><span class="fig-label">Fig. 22.</span> Three phases. <strong>Start:</strong> random similarities, some even negative. <strong>First few epochs:</strong> everything jumps to almost exactly 1, even man/pizza. <strong>The rest:</strong> unrelated pairs separate while related ones stay close.</figcaption>
+<figcaption><span class="fig-label">Fig. 23.</span> Three phases. <strong>Start:</strong> random similarities, some even negative. <strong>First few epochs:</strong> everything jumps to almost exactly 1, even man/pizza. <strong>The rest:</strong> unrelated pairs separate while related ones stay close.</figcaption>
 </figure>
 
 <h3>Why does everything become similar at first?</h3>
@@ -1035,7 +1187,7 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 <h3>Seeded, so it's repeatable</h3>
 <p><a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L344-L356" target="_blank" rel="noopener"><code>mulberry32</code></a> is a <em>pseudo</em>-random generator: a short formula that turns a starting number (the <strong>seed</strong>) into a sequence that looks random but is completely determined by the seed.</p>
 
-<figure id="fig-23">
+<figure id="fig-24">
 <svg viewBox="0 0 720 170" role="img" aria-label="Same seed gives the same sequence; a different seed gives a different one">
   <g font-size="13" class="mono">
     <text x="20" y="30" font-weight="700" font-family="inherit">mulberry32(42)</text>
@@ -1046,7 +1198,7 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
     <g id="seqC" transform="translate(150,114)"></g>
   </g>
 </svg>
-<figcaption><span class="fig-label">Fig. 23.</span> The first five numbers from each generator. Seed 42 gives exactly the same sequence every time. Seed 7 gives a completely different one.</figcaption>
+<figcaption><span class="fig-label">Fig. 24.</span> The first five numbers from each generator. Seed 42 gives exactly the same sequence every time. Seed 7 gives a completely different one.</figcaption>
 </figure>
 
 <p>That's why running your code twice gives identical results to the last digit, and why the Python matches the TypeScript: both use the same generator with the same seed, and draw from it in exactly the same order. (That's also why <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L496-L510" target="_blank" rel="noopener"><code>shuffle</code></a> uses <code>rand()</code> instead of Python's <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L496-L510" target="_blank" rel="noopener"><code>random.shuffle</code></a>, and why <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L465-L494" target="_blank" rel="noopener"><code>init_weights</code></a> alternates between w_in and w_out value by value.)</p>
@@ -1058,10 +1210,10 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 <h3>What happens with a different seed?</h3>
 <p>The seed is fixed at 42 in <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L632-L761" target="_blank" rel="noopener"><code>train_skip_gram</code></a>. Here's what the same 100-epoch training gives with seeds 1, 2 and 3 instead:</p>
 
-<figure id="fig-24">
+<figure id="fig-25">
 <svg id="seedLossSvg" viewBox="0 0 720 260" role="img" aria-label="Loss curves for four seeds nearly overlap"></svg>
 <div class="legend" id="seedLegend"></div>
-<figcaption><span class="fig-label">Fig. 24.</span> The loss curves almost overlap. The random details differ, but the overall learning is the same.</figcaption>
+<figcaption><span class="fig-label">Fig. 25.</span> The loss curves almost overlap. The random details differ, but the overall learning is the same.</figcaption>
 </figure>
 
 <div class="table-wrap"><table id="seedTable"></table></div>
@@ -1085,7 +1237,7 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 <h3>Analogies: arithmetic on meaning</h3>
 <p>If the vectors have captured meaning, then the <em>difference</em> between two vectors should capture a relationship. <code>king − man</code> is roughly "royalty without the male part"; adding <code>woman</code> should land near "queen":</p>
 
-<figure id="fig-25">
+<figure id="fig-26">
 <svg viewBox="0 0 720 260" role="img" aria-label="king minus man plus woman lands near queen">
   <g font-size="14" transform="translate(40,0)">
     <circle cx="140" cy="200" r="6" class="accent"/><text x="120" y="228" font-weight="600">man</text>
@@ -1106,7 +1258,7 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
     <text x="440" y="196" font-size="13" class="mono" fill="var(--pos)">→ queen (0.89)</text>
   </g>
 </svg>
-<figcaption><span class="fig-label">Fig. 25.</span> Relationships become directions. The arrow from man to king is roughly parallel to the arrow from woman to queen.</figcaption>
+<figcaption><span class="fig-label">Fig. 26.</span> Relationships become directions. The arrow from man to king is roughly parallel to the arrow from woman to queen.</figcaption>
 </figure>
 
 <p>With your small corpus some analogies work (king → queen, queen → king, prince → princess, he → she) and some don't (kitten − cat + dog gives tiger instead of puppy). Analogies are a strict test: the answer must be the single closest of 286 tokens, so a small amount of noise can make the wrong one win.</p>
@@ -1131,14 +1283,14 @@ other_vector  = w_out[other]     <span class="c"># the context's "context vector
 </table>
 
 <h3>Where it leads</h3>
-<figure id="fig-26">
+<figure id="fig-27">
 <svg viewBox="0 0 720 360" role="img" aria-label="Skip-gram compared with a next-token language model"><text x="20" y="24" font-weight="700" font-size="14">Skip-gram (your code)</text><rect x="20" y="40" width="110" height="52" rx="8" class="box"/><text x="75.0" y="62.0" text-anchor="middle" font-size="13" font-weight="600">king</text><text x="75.0" y="79.0" text-anchor="middle" font-size="11.5" class="muted">target token</text><path d="M130 66 L158 66" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="160" y="40" width="130" height="52" rx="8" class="box-accent"/><text x="225.0" y="62.0" text-anchor="middle" font-size="13" font-weight="600">w_in[king]</text><text x="225.0" y="79.0" text-anchor="middle" font-size="11.5" class="muted">embedding</text><path d="M290 66 L318 66" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="320" y="40" width="120" height="52" rx="8" class="box-pos"/><text x="380.0" y="62.0" text-anchor="middle" font-size="13" font-weight="600">· w_out[x]</text><text x="380.0" y="79.0" text-anchor="middle" font-size="11.5" class="muted">dot product</text><path d="M440 66 L468 66" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="470" y="40" width="90" height="52" rx="8" class="box"/><text x="515.0" y="62.0" text-anchor="middle" font-size="13" font-weight="600">sigmoid</text><text x="515.0" y="79.0" text-anchor="middle" font-size="11.5" class="muted">→ 0 to 1</text><path d="M560 66 L588 66" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="590" y="40" width="110" height="52" rx="8" class="box-pos"/><text x="645.0" y="62.0" text-anchor="middle" font-size="13" font-weight="600">yes / no</text><text x="645.0" y="79.0" text-anchor="middle" font-size="11.5" class="muted">real neighbour?</text><text x="20" y="118" font-size="12" class="muted">One token in, one candidate x, one yes/no answer. The embedding goes straight into the dot product.</text><text x="20" y="166" font-weight="700" font-size="14">Next-token language model (e.g. GPT)</text><rect x="20" y="182" width="110" height="60" rx="8" class="box"/><text x="75.0" y="208.0" text-anchor="middle" font-size="13" font-weight="600">the man was</text><text x="75.0" y="225.0" text-anchor="middle" font-size="11.5" class="muted">all tokens so far</text><path d="M130 212 L148 212" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="150" y="182" width="100" height="60" rx="8" class="box-accent"/><text x="200.0" y="208.0" text-anchor="middle" font-size="13" font-weight="600">embeddings</text><text x="200.0" y="225.0" text-anchor="middle" font-size="11.5" class="muted">input table</text><path d="M250 212 L268 212" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="270" y="182" width="130" height="60" rx="8" fill="var(--surface-2)" stroke="var(--violet)" stroke-width="2"/><text x="335" y="208" text-anchor="middle" font-size="13" font-weight="600" fill="var(--violet)">transformer</text><text x="335" y="225" text-anchor="middle" font-size="11.5" class="muted">layers mix in context</text><path d="M400 212 L418 212" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="420" y="182" width="120" height="60" rx="8" class="box-pos"/><text x="480.0" y="208.0" text-anchor="middle" font-size="13" font-weight="600">· every output</text><text x="480.0" y="225.0" text-anchor="middle" font-size="11.5" class="muted">vector (all tokens)</text><path d="M540 212 L558 212" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="560" y="182" width="70" height="60" rx="8" class="box"/><text x="595.0" y="212.0" text-anchor="middle" font-size="13" font-weight="600">softmax</text><path d="M630 212 L648 212" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="650" y="182" width="60" height="60" rx="8" class="box"/><text x="680.0" y="208.0" text-anchor="middle" font-size="13" font-weight="600">next</text><text x="680.0" y="225.0" text-anchor="middle" font-size="11.5" class="muted">token</text><text x="20" y="268" font-size="12" class="muted">Many tokens in, a vote across the whole vocabulary out: "crowned" 31%, "king" 12%, … The vector going into the dot product</text><text x="20" y="284" font-size="12" class="muted">now depends on the whole sentence so far.</text><text x="360" y="330" text-anchor="middle" font-size="13" font-weight="600">Same ingredients: embedding vectors, a dot product with output vectors, and a −log-probability loss.</text></svg>
-<figcaption><span class="fig-label">Fig. 26.</span> The same structure, scaled up. The percentages are illustrative.</figcaption>
+<figcaption><span class="fig-label">Fig. 27.</span> The same structure, scaled up. The percentages are illustrative.</figcaption>
 </figure>
 <p>Large language models such as GPT predict the next token, and skip-gram's structure is visible inside them:</p>
 <ul>
 <li><strong>An input embedding table</strong>, like <code>w_in</code>: every token starts as a learned vector.</li>
-<li><strong>An output embedding table</strong>, like <code>w_out</code>: to score each possible next token, the model takes a <strong>dot product</strong> with that token's output vector. That's the same <code>w_in · w_out</code> move as <code>train_pair</code>. (Some models, GPT-2 for example, even reuse the input table as the output table.)</li>
+<li><strong>An output embedding table</strong>, like <code>w_out</code>: to score each possible next token, the model takes a <strong>dot product</strong> with that token's output vector. That's the same move as <code>w_in[w] · w_out[c]</code> in <code>train_pair</code>. (Some models, GPT-2 for example, even reuse the input table as the output table.)</li>
 <li><strong>The same loss idea:</strong> −log of the probability given to the right answer, called cross-entropy. The difference is that the answer is "which of 50,000+ tokens comes next?" rather than yes/no, and a <em>softmax</em> turns the dot products into probabilities that add up to 1.</li>
 </ul>
 
