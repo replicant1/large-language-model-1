@@ -1,42 +1,44 @@
 import unittest
 import io
 import contextlib
+from typing import Optional
 from embed import Embed
-from embed import dot
 from embed import TrainingOptions
 from embed import InitResult
 from embed import EpochResult
 from embed import TrainEmbedResult
 from skip_gram_network import SkipGramNetwork
 
-# One Embed shared by all the tests below: creating it trains the BPE tokenizer on the
-# corpus, which is slow and prints a lot, so it is done once and its output hidden.
-EMBED: Embed
+# Creating an Embed trains the BPE tokenizer on the corpus, which is slow and prints a lot,
+# so the tests that need one share a single Embed, created the first time and its output hidden.
+class EmbedTestCase(unittest.TestCase):
+    shared_embed: Optional[Embed] = None
 
-
-def setUpModule():
-    global EMBED
-    with contextlib.redirect_stdout(io.StringIO()):
-        EMBED = Embed()
+    @classmethod
+    def setUpClass(cls):
+        if EmbedTestCase.shared_embed is None:
+            with contextlib.redirect_stdout(io.StringIO()):
+                EmbedTestCase.shared_embed = Embed()
+        cls.embed = EmbedTestCase.shared_embed
 
 
 class TestDot(unittest.TestCase):
     def test_example_from_comment(self):
-        self.assertAlmostEqual(-0.5, dot([1.0, 2.0, 0.5], [0.5, -1.0, 2.0]))
+        self.assertAlmostEqual(-0.5, Embed.dot([1.0, 2.0, 0.5], [0.5, -1.0, 2.0]))
 
     def test_is_symmetric(self):
         a = [0.3, -0.7, 1.1]
         b = [2.0, 0.4, -0.2]
-        self.assertEqual(dot(a, b), dot(b, a))
+        self.assertEqual(Embed.dot(a, b), Embed.dot(b, a))
 
 
-class TestBuildTrainingPairs(unittest.TestCase):
+class TestBuildTrainingPairs(EmbedTestCase):
     def test_window_of_one(self):
-        pairs = EMBED.build_training_pairs([[9, 38, 249]], 1)
+        pairs = self.embed.build_training_pairs([[9, 38, 249]], 1)
         self.assertEqual([(9, 38), (38, 9), (38, 249), (249, 38)], pairs)
 
     def test_window_of_two(self):
-        pairs = EMBED.build_training_pairs([[1, 2, 3, 4]], 2)
+        pairs = self.embed.build_training_pairs([[1, 2, 3, 4]], 2)
         self.assertEqual([
             (1, 2), (1, 3),
             (2, 1), (2, 3), (2, 4),
@@ -45,51 +47,51 @@ class TestBuildTrainingPairs(unittest.TestCase):
         ], pairs)
 
     def test_window_larger_than_sentence(self):
-        pairs = EMBED.build_training_pairs([[1, 2]], 5)
+        pairs = self.embed.build_training_pairs([[1, 2]], 5)
         self.assertEqual([(1, 2), (2, 1)], pairs)
 
     def test_pairs_do_not_cross_sentences(self):
-        pairs = EMBED.build_training_pairs([[1, 2], [3, 4]], 2)
+        pairs = self.embed.build_training_pairs([[1, 2], [3, 4]], 2)
         self.assertEqual([(1, 2), (2, 1), (3, 4), (4, 3)], pairs)
 
     def test_repeated_tokens_are_kept(self):
-        pairs = EMBED.build_training_pairs([[5, 5]], 1)
+        pairs = self.embed.build_training_pairs([[5, 5]], 1)
         self.assertEqual([(5, 5), (5, 5)], pairs)
 
     def test_empty_and_single_token_sentences(self):
-        self.assertEqual([], EMBED.build_training_pairs([[], [7]], 2))
+        self.assertEqual([], self.embed.build_training_pairs([[], [7]], 2))
 
 
-class TestSimilarityToEveryToken(unittest.TestCase):
+class TestSimilarityToEveryToken(EmbedTestCase):
     def test_scores_every_other_token_in_vocabulary_order(self):
         network = SkipGramNetwork(["a", "b", "c"], 2)
         network.set_embedding(0, [1.0, 0.0])
         network.set_embedding(1, [0.0, 1.0])
         network.set_embedding(2, [-1.0, 0.0])
-        self.assertEqual([(0, 1.0), (2, -1.0)], EMBED.similarity_to_every_token(network, [1.0, 0.0], {1}))
+        self.assertEqual([(0, 1.0), (2, -1.0)], self.embed.similarity_to_every_token(network, [1.0, 0.0], {1}))
 
     def test_token_embeddings_are_rounded_first(self):
         # 0.1234564 rounds to 0.123456, so the similarity uses that, not the raw weight
         network = SkipGramNetwork(["a"], 1)
         network.set_embedding(0, [0.1234564])
-        [(index, similarity)] = EMBED.similarity_to_every_token(network, [2.0], set())
+        [(index, similarity)] = self.embed.similarity_to_every_token(network, [2.0], set())
         self.assertEqual(0, index)
-        self.assertEqual(EMBED.cosine_similarity([2.0], [0.123456]), similarity)
+        self.assertEqual(self.embed.cosine_similarity([2.0], [0.123456]), similarity)
 
 
-class TestRoundLikeJs(unittest.TestCase):
+class TestRoundLikeJs(EmbedTestCase):
     def test_rounds_to_six_places(self):
-        self.assertEqual(2.130895, EMBED.round_like_js(2.1308954, 6))
-        self.assertEqual(2.130896, EMBED.round_like_js(2.1308956, 6))
+        self.assertEqual(2.130895, self.embed.round_like_js(2.1308954, 6))
+        self.assertEqual(2.130896, self.embed.round_like_js(2.1308956, 6))
 
     def test_rounds_to_two_places(self):
-        self.assertEqual(0.96, EMBED.round_like_js(0.9642, 2))
-        self.assertEqual(-0.24, EMBED.round_like_js(-0.2422, 2))
+        self.assertEqual(0.96, self.embed.round_like_js(0.9642, 2))
+        self.assertEqual(-0.24, self.embed.round_like_js(-0.2422, 2))
 
     def test_halves_round_up_like_javascript(self):
         # Python's round(0.5) is 0 (round half to even); Math.round(0.5) is 1
-        self.assertEqual(0.000001, EMBED.round_like_js(0.0000005, 6))
-        self.assertEqual(0.13, EMBED.round_like_js(0.125, 2))
+        self.assertEqual(0.000001, self.embed.round_like_js(0.0000005, 6))
+        self.assertEqual(0.13, self.embed.round_like_js(0.125, 2))
 
 
 class TestTrainSkipGram(unittest.TestCase):

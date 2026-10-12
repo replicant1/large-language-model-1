@@ -7,8 +7,8 @@ from pathlib import Path
 
 from bpe import BPETokenizer, Token, TokenFreqSet, TokenList, Vocabulary
 from skip_gram_network import SkipGramNetwork
-from skip_gram_trainer import SkipGramTrainer, build_negative_sampling_table
-from random_numbers import mulberry32
+from skip_gram_trainer import SkipGramTrainer
+from random_numbers import Mulberry32
 
 ## Curated training corpus for Word2Vec Skip-gram and transformer training.
 ##
@@ -291,18 +291,6 @@ class TrainEmbedResult:
     warnings: list[str]
     
 
-# How strongly two vectors agree: large and positive when they point the same way,
-# near zero when unrelated, negative when they point in opposite directions.
-# (Adds the products one at a time, in order, rather than using sum(), whose
-# extra-precise float addition in newer Pythons would give slightly different results
-# from the TypeScript.)
-#
-# Example:  dot([1.0, 2.0, 0.5], [0.5, -1.0, 2.0])  ->  1.0*0.5 + 2.0*-1.0 + 0.5*2.0 = -0.5
-def dot(a: list[float], b: list[float]) -> float:
-    result = 0.0
-    for d in range(len(a)):
-        result += a[d] * b[d]
-    return result
 
 # Trains word embeddings on CORPUS: learns BPE tokens, builds a fixed vocabulary, then
 # trains a skip-gram model with negative sampling (see train_skip_gram).
@@ -344,14 +332,28 @@ class Embed:
         factor = 10 ** places
         return math.floor(value * factor + 0.5) / factor
 
+    # How strongly two vectors agree: large and positive when they point the same way,
+    # near zero when unrelated, negative when they point in opposite directions.
+    # (Adds the products one at a time, in order, rather than using sum(), whose
+    # extra-precise float addition in newer Pythons would give slightly different results
+    # from the TypeScript.)
+    #
+    # Example:  dot([1.0, 2.0, 0.5], [0.5, -1.0, 2.0])  ->  1.0*0.5 + 2.0*-1.0 + 0.5*2.0 = -0.5
+    @staticmethod
+    def dot(a: list[float], b: list[float]) -> float:
+        result = 0.0
+        for d in range(len(a)):
+            result += a[d] * b[d]
+        return result
+
     # How closely two vectors point the same way, ignoring their lengths:
     # 1 for the same direction, 0 for unrelated, -1 for opposite.
     # Returns 0 if either vector is all zeros, since it then has no direction.
     def cosine_similarity(self, a: list[float], b: list[float]) -> float:
-        length_product = math.sqrt(dot(a, a)) * math.sqrt(dot(b, b))
+        length_product = math.sqrt(Embed.dot(a, a)) * math.sqrt(Embed.dot(b, b))
         if length_product == 0:
             return 0.0
-        return dot(a, b) / length_product
+        return Embed.dot(a, b) / length_product
 
     # A word's embedding as a plain list, rounded to 6 decimal places
     def get_vector(self, network: SkipGramNetwork, word_index: int) -> list[float]:
@@ -395,7 +397,7 @@ class Embed:
 
         # Uses the tokenizer and vocabulary built in __init__
         vocab_size = self.vocabulary.size()
-        rand = mulberry32(42)
+        rand = Mulberry32(42)
 
         # Encode each sentence as vocabulary indices, then pair up nearby tokens
         sentences_as_indices = [self.vocabulary.encode(self.tokenize(sentence)) for sentence in CORPUS]
@@ -410,7 +412,7 @@ class Embed:
             totalPairs=len(positive_pairs)
         )
 
-        negative_sampling_table = build_negative_sampling_table(self.vocabulary)
+        negative_sampling_table = SkipGramTrainer.build_negative_sampling_table(self.vocabulary)
         network = SkipGramNetwork([token.token for token in self.vocabulary.index_to_token], embeded_vector_size, rand)
         trainer = SkipGramTrainer(network, positive_pairs, negative_sampling_table, rand, negative_samples)
 

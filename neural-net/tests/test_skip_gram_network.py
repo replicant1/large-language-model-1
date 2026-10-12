@@ -1,18 +1,20 @@
 import unittest
 import math
-from neuron import sigmoid
-from embed import dot
-from random_numbers import mulberry32
+from neuron import Neuron
+from embed import Embed
+from random_numbers import Mulberry32
 from skip_gram_network import SkipGramNetwork
 
 
-# Builds a network with one token per embedding, and sets each token's embedding and context vector
-def network_with(embeddings: list[list[float]], context_vectors: list[list[float]]) -> SkipGramNetwork:
-    network = SkipGramNetwork([f"t{i}" for i in range(len(embeddings))], len(embeddings[0]))
-    for token, (embedding, context_vector) in enumerate(zip(embeddings, context_vectors)):
-        network.set_embedding(token, embedding)
-        network.set_context_vector(token, context_vector)
-    return network
+class NetworkTestCase(unittest.TestCase):
+    # Builds a network with one token per embedding, and sets each token's embedding and context vector
+    @staticmethod
+    def network_with(embeddings: list[list[float]], context_vectors: list[list[float]]) -> SkipGramNetwork:
+        network = SkipGramNetwork([f"t{i}" for i in range(len(embeddings))], len(embeddings[0]))
+        for token, (embedding, context_vector) in enumerate(zip(embeddings, context_vectors)):
+            network.set_embedding(token, embedding)
+            network.set_context_vector(token, context_vector)
+        return network
 
 
 
@@ -37,7 +39,7 @@ class TestStructure(unittest.TestCase):
     def test_activations(self):
         network = SkipGramNetwork(["the", "cat"], 2)
         self.assertEqual(0.25, network.hidden_layer.neurons[0].activation(0.25))
-        self.assertEqual(sigmoid(0.25), network.output_layer.neurons[0].activation(0.25))
+        self.assertEqual(Neuron.sigmoid(0.25), network.output_layer.neurons[0].activation(0.25))
 
     def test_embedding_is_the_weights_out_of_the_input_neuron(self):
         network = SkipGramNetwork(["the", "cat"], 3)
@@ -54,13 +56,13 @@ class TestStructure(unittest.TestCase):
         self.assertEqual([0.0, 0.0, 0.0], network.context_vector(1))
 
 
-class TestForward(unittest.TestCase):
+class TestForward(NetworkTestCase):
     def test_score_is_sigmoid_of_embedding_dot_context_vector(self):
-        network = network_with([[0.5, 1.0], [0.0, 0.0]], [[0.0, 0.0], [0.2, -0.4]])
-        self.assertAlmostEqual(sigmoid(0.5 * 0.2 + 1.0 * -0.4), network.forward(0, 1))
+        network = self.network_with([[0.5, 1.0], [0.0, 0.0]], [[0.0, 0.0], [0.2, -0.4]])
+        self.assertAlmostEqual(Neuron.sigmoid(0.5 * 0.2 + 1.0 * -0.4), network.forward(0, 1))
 
     def test_hidden_values_are_the_target_embedding(self):
-        network = network_with([[0.5, 1.0], [0.3, 0.7]], [[0.0, 0.0], [0.0, 0.0]])
+        network = self.network_with([[0.5, 1.0], [0.3, 0.7]], [[0.0, 0.0], [0.0, 0.0]])
         network.forward(1, 0)
         self.assertEqual([0.3, 0.7], [neuron.value for neuron in network.hidden_layer.neurons])
 
@@ -93,7 +95,7 @@ class TestInitializeWeights(unittest.TestCase):
 # The starting weights SkipGramNetwork sets when given the seeded generator
 class TestNetworkStartingWeights(unittest.TestCase):
     def test_one_vector_per_token_of_the_right_size(self):
-        network = SkipGramNetwork(["a", "b", "c", "d", "e"], 3, mulberry32(1))
+        network = SkipGramNetwork(["a", "b", "c", "d", "e"], 3, Mulberry32(1))
         self.assertEqual(5, network.vocab_size())
         for token in range(5):
             self.assertEqual(3, len(network.embedding(token)))
@@ -102,20 +104,20 @@ class TestNetworkStartingWeights(unittest.TestCase):
     def test_values_within_scale(self):
         dim = 4
         half_scale = 0.5 / dim / 2
-        network = SkipGramNetwork([str(i) for i in range(10)], dim, mulberry32(7))
+        network = SkipGramNetwork([str(i) for i in range(10)], dim, Mulberry32(7))
         for token in range(10):
             for weight in network.embedding(token) + network.context_vector(token):
                 self.assertLessEqual(abs(weight), half_scale)
 
     def test_every_synapse_is_a_separate_object(self):
-        network = SkipGramNetwork(["a", "b", "c"], 2, mulberry32(1))
+        network = SkipGramNetwork(["a", "b", "c"], 2, Mulberry32(1))
         synapses = [synapse for neuron in network.net.neurons for synapse in neuron.synapses_out]
         self.assertEqual(3 * 2 + 2 * 3, len({id(synapse) for synapse in synapses}))
 
     def test_matches_typescript_for_seed_42(self):
-        # Reference values from running the TypeScript initialisation with mulberry32(42),
+        # Reference values from running the TypeScript initialisation with Mulberry32(42),
         # vocabSize = 2, dim = 2. The TypeScript stores them flat: token 0 then token 1.
-        network = SkipGramNetwork(["a", "b"], 2, mulberry32(42))
+        network = SkipGramNetwork(["a", "b"], 2, Mulberry32(42))
         self.assertEqual([[0.025275937980040908, 0.08811644837260246],
                           [-0.08129652531351894, -0.056693001417443156]],
                          [network.embedding(0), network.embedding(1)])
@@ -124,9 +126,9 @@ class TestNetworkStartingWeights(unittest.TestCase):
                          [network.context_vector(0), network.context_vector(1)])
 
 
-class TestTrainPair(unittest.TestCase):
+class TestTrainPair(NetworkTestCase):
     def test_positive_example_from_comment(self):
-        network = network_with([[0.5, 0.5]], [[0.5, -0.5]])
+        network = self.network_with([[0.5, 0.5]], [[0.5, -0.5]])
         loss = network.train_pair(0, 0, 1, 0.1)
         for expected, actual in zip([0.525, 0.475], network.embedding(0)):
             self.assertAlmostEqual(expected, actual)
@@ -136,19 +138,19 @@ class TestTrainPair(unittest.TestCase):
 
     def test_positive_pair_score_goes_up(self):
         # target is token 0's embedding, other is token 1's context vector
-        network = network_with([[0.1, 0.2], [0.0, 0.0]], [[0.0, 0.0], [0.3, -0.1]])
-        before = dot(network.embedding(0), network.context_vector(1))
+        network = self.network_with([[0.1, 0.2], [0.0, 0.0]], [[0.0, 0.0], [0.3, -0.1]])
+        before = Embed.dot(network.embedding(0), network.context_vector(1))
         network.train_pair(0, 1, 1, 0.5)
-        self.assertGreater(dot(network.embedding(0), network.context_vector(1)), before)
+        self.assertGreater(Embed.dot(network.embedding(0), network.context_vector(1)), before)
 
     def test_negative_pair_score_goes_down(self):
-        network = network_with([[0.1, 0.2], [0.0, 0.0]], [[0.0, 0.0], [0.3, -0.1]])
-        before = dot(network.embedding(0), network.context_vector(1))
+        network = self.network_with([[0.1, 0.2], [0.0, 0.0]], [[0.0, 0.0], [0.3, -0.1]])
+        before = Embed.dot(network.embedding(0), network.context_vector(1))
         network.train_pair(0, 1, 0, 0.5)
-        self.assertLess(dot(network.embedding(0), network.context_vector(1)), before)
+        self.assertLess(Embed.dot(network.embedding(0), network.context_vector(1)), before)
 
     def test_only_the_two_vectors_change(self):
-        network = network_with([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]], [[0.6, 0.5], [0.4, 0.3], [0.2, 0.1]])
+        network = self.network_with([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]], [[0.6, 0.5], [0.4, 0.3], [0.2, 0.1]])
         network.train_pair(0, 2, 1, 0.5)
         self.assertEqual([[0.3, 0.4], [0.5, 0.6]], [network.embedding(1), network.embedding(2)])
         self.assertEqual([[0.6, 0.5], [0.4, 0.3]], [network.context_vector(0), network.context_vector(1)])
@@ -157,15 +159,15 @@ class TestTrainPair(unittest.TestCase):
         # Both vectors start at [1.0], so dot = 1.0. lr is chosen so that grad = 0.5.
         # Each vector should become 1.0 + 0.5 * 1.0 = 1.5. If the context vector were updated
         # with the already-updated embedding instead, it would become 1.0 + 0.5 * 1.5 = 1.75.
-        network = network_with([[1.0]], [[1.0]])
-        lr = 0.5 / (1 - sigmoid(1.0))
+        network = self.network_with([[1.0]], [[1.0]])
+        lr = 0.5 / (1 - Neuron.sigmoid(1.0))
         network.train_pair(0, 0, 1, lr)
         self.assertAlmostEqual(1.5, network.embedding(0)[0])
         self.assertAlmostEqual(1.5, network.context_vector(0)[0])
 
     def test_loss_for_negative_pair(self):
         # dot = 0 -> score 0.5 -> loss = -log(1 - 0.5)
-        network = network_with([[0.0, 0.0]], [[0.0, 0.0]])
+        network = self.network_with([[0.0, 0.0]], [[0.0, 0.0]])
         self.assertAlmostEqual(math.log(2), network.train_pair(0, 0, 0, 0.1))
 
 

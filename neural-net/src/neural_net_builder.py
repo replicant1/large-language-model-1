@@ -1,5 +1,5 @@
 from typing import Callable, Optional
-from neuron import Neuron, identity
+from neuron import Neuron
 from neural_net import NeuralNet
 from layer import Layer
 from synapse import Synapse
@@ -12,7 +12,7 @@ class NeuralNetBuilder:
     layer_names: a name for each layer (default "layer_0", "layer_1", ...)
     neuron_names_per_layer: a name for each neuron in each layer, used in its id
         (default: its index); for example the tokens, for a layer with one neuron per token
-    activation_per_layer: each layer's activation function (default: identity)
+    activation_per_layer: each layer's activation function (default: Neuron.identity)
     initial_weight: every synapse's starting weight (default 1.0)
     verbose: print each layer and neuron as it is created
 
@@ -39,7 +39,7 @@ class NeuralNetBuilder:
         # Create all the neurons first
         for layer_index, neuron_count in enumerate(self.neuron_count_per_layer):
             layer_name = self.layer_names[layer_index] if self.layer_names else f"layer_{layer_index}"
-            activation = self.activation_per_layer[layer_index] if self.activation_per_layer else identity
+            activation = self.activation_per_layer[layer_index] if self.activation_per_layer else Neuron.identity
             if self.verbose:
                 print(f"Building layer {layer_index} with {neuron_count} neurons")
             layer_neurons = []

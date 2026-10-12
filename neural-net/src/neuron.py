@@ -1,23 +1,5 @@
 import math
-from typing import Callable
-
-
-# Activation functions: decide how strongly a neuron fires, given the weighted sum of its inputs.
-
-# Passes the weighted sum straight through. Used where a layer only needs to carry values on,
-# such as the hidden layer of the skip-gram network.
-def identity(x: float) -> float:
-    return x
-
-
-# Squashes any number into the range 0 to 1, so it can be read as a probability.
-# Returns exactly 1 above 6 and exactly 0 below -6, as the TypeScript does, to save time.
-def sigmoid(x: float) -> float:
-    if x > 6:
-        return 1.0
-    if x < -6:
-        return 0.0
-    return 1 / (1 + math.exp(-x))
+from typing import Callable, Optional
 
 
 class Neuron:
@@ -25,9 +7,28 @@ class Neuron:
     weighted sum of its inputs, that is, each incoming synapse's weight times the value
     of the neuron it comes from."""
 
-    def __init__(self, id: str, activation: Callable[[float], float] = identity):
+    # Activation functions: decide how strongly a neuron fires, given the weighted sum of its inputs.
+
+    # Passes the weighted sum straight through. Used where a layer only needs to carry values on,
+    # such as the hidden layer of the skip-gram network.
+    @staticmethod
+    def identity(x: float) -> float:
+        return x
+
+    # Squashes any number into the range 0 to 1, so it can be read as a probability.
+    # Returns exactly 1 above 6 and exactly 0 below -6, as the TypeScript does, to save time.
+    @staticmethod
+    def sigmoid(x: float) -> float:
+        if x > 6:
+            return 1.0
+        if x < -6:
+            return 0.0
+        return 1 / (1 + math.exp(-x))
+
+    # activation: the neuron's activation function (default: Neuron.identity)
+    def __init__(self, id: str, activation: Optional[Callable[[float], float]] = None):
         self.id = id
-        self.activation = activation
+        self.activation = activation if activation is not None else Neuron.identity
         self._synapses_in = []
         self._synapses_out = []
         self._value = 0.0

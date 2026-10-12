@@ -1,6 +1,6 @@
 import math
 from typing import Callable, Optional
-from neuron import identity, sigmoid
+from neuron import Neuron
 from neural_net_builder import NeuralNetBuilder
 
 
@@ -37,7 +37,7 @@ class SkipGramNetwork:
             [vocab_size, dim, vocab_size],
             layer_names=["input", "hidden", "output"],
             neuron_names_per_layer=[token_names, [str(d) for d in range(dim)], token_names],
-            activation_per_layer=[identity, identity, sigmoid],
+            activation_per_layer=[Neuron.identity, Neuron.identity, Neuron.sigmoid],
             initial_weight=0.0,
         ).build()
         self.input_layer = self.net.layer("input")

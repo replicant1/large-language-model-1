@@ -1,5 +1,5 @@
 import unittest
-from neuron import Neuron, identity, sigmoid
+from neuron import Neuron
 from synapse import Synapse
 
 
@@ -35,7 +35,7 @@ class TestNeuron(unittest.TestCase):
         self.assertEqual(neuron2.synapses_in[0].from_neuron, synapse_from_1_to_2.from_neuron)
 
     def test_default_activation_is_identity(self):
-        self.assertIs(identity, Neuron("n").activation)
+        self.assertIs(Neuron.identity, Neuron("n").activation)
 
     def test_forward_example_from_comment(self):
         a, b, out = Neuron("a"), Neuron("b"), Neuron("out")
@@ -46,14 +46,14 @@ class TestNeuron(unittest.TestCase):
         self.assertEqual(-2.0, out.value)
 
     def test_forward_applies_the_activation(self):
-        a, out = Neuron("a"), Neuron("out", sigmoid)
+        a, out = Neuron("a"), Neuron("out", Neuron.sigmoid)
         a.value = 1.0
         Synapse("a_to_out", a, out, 0.5)
         self.assertAlmostEqual(1 / (1 + 2.718281828459045 ** -0.5), out.forward())
 
     def test_forward_with_no_inputs_is_activation_of_zero(self):
         self.assertEqual(0.0, Neuron("n").forward())
-        self.assertEqual(0.5, Neuron("n", sigmoid).forward())
+        self.assertEqual(0.5, Neuron("n", Neuron.sigmoid).forward())
 
 
 class TestSynapseConstructor(unittest.TestCase):
@@ -75,13 +75,13 @@ class TestSynapseConstructor(unittest.TestCase):
 
 class TestActivations(unittest.TestCase):
     def test_identity(self):
-        self.assertEqual(-1.5, identity(-1.5))
+        self.assertEqual(-1.5, Neuron.identity(-1.5))
 
     def test_sigmoid_middle_and_ends(self):
-        self.assertEqual(0.5, sigmoid(0.0))
-        self.assertEqual(1.0, sigmoid(6.5))
-        self.assertEqual(0.0, sigmoid(-6.5))
-        self.assertAlmostEqual(1 / (1 + 2.718281828459045 ** -2.0), sigmoid(2.0))
+        self.assertEqual(0.5, Neuron.sigmoid(0.0))
+        self.assertEqual(1.0, Neuron.sigmoid(6.5))
+        self.assertEqual(0.0, Neuron.sigmoid(-6.5))
+        self.assertAlmostEqual(1 / (1 + 2.718281828459045 ** -2.0), Neuron.sigmoid(2.0))
     
 
 if __name__ == "__main__":
