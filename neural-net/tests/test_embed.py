@@ -1,11 +1,6 @@
 import unittest
 import io
 import contextlib
-import math
-from bpe import Token
-from bpe import TokenFreq
-from bpe import TokenFreqSet
-from bpe import Vocabulary
 from embed import Embed
 from embed import dot
 from embed import TrainingOptions
@@ -65,155 +60,21 @@ class TestBuildTrainingPairs(unittest.TestCase):
         self.assertEqual([], EMBED.build_training_pairs([[], [7]], 2))
 
 
-class TestBuildNegativeSamplingTable(unittest.TestCase):
-    def _vocabulary(self, token_string_to_freq: dict[str, int]) -> Vocabulary:
-        token_freqs = TokenFreqSet()
-        for token_string, freq in token_string_to_freq.items():
-            token_freqs.add(TokenFreq(Token(token_string), freq))
-        return Vocabulary(token_freqs)
+class TestSimilarityToEveryToken(unittest.TestCase):
+    def test_scores_every_other_token_in_vocabulary_order(self):
+        network = SkipGramNetwork(["a", "b", "c"], 2)
+        network.set_embedding(0, [1.0, 0.0])
+        network.set_embedding(1, [0.0, 1.0])
+        network.set_embedding(2, [-1.0, 0.0])
+        self.assertEqual([(0, 1.0), (2, -1.0)], EMBED.similarity_to_every_token(network, [1.0, 0.0], {1}))
 
-    def test_three_token_example(self):
-        # The worked example from the comment: the:100, cat:10, mat:1
-        cumulative = EMBED.build_negative_sampling_table(self._vocabulary({"the": 100, "cat": 10, "mat": 1}))
-        self.assertEqual(3, len(cumulative))
-        self.assertAlmostEqual(0.827, cumulative[0], places=3)
-        self.assertAlmostEqual(0.974, cumulative[1], places=3)
-        self.assertAlmostEqual(1.0, cumulative[2])
-
-    def test_equal_frequencies_give_equal_shares(self):
-        cumulative = EMBED.build_negative_sampling_table(self._vocabulary({"a": 3, "b": 3, "c": 3, "d": 3}))
-        for expected, actual in zip([0.25, 0.5, 0.75, 1.0], cumulative):
-            self.assertAlmostEqual(expected, actual)
-
-    def test_cumulative_never_decreases(self):
-        cumulative = EMBED.build_negative_sampling_table(self._vocabulary({"a": 7, "b": 1, "c": 50, "d": 2}))
-        for i in range(len(cumulative) - 1):
-            self.assertLessEqual(cumulative[i], cumulative[i + 1])
-
-
-class TestSampleNegative(unittest.TestCase):
-    def _fixed_rand(self, values: list[float]):
-        values_iter = iter(values)
-        return lambda: next(values_iter)
-
-    def test_examples_from_comment(self):
-        cumulative = [0.827, 0.974, 1.0]
-        rand = self._fixed_rand([0.50, 0.90, 0.99])
-        self.assertEqual([0, 1, 2], [EMBED.sample_negative(cumulative, rand) for _ in range(3)])
-
-    def test_value_on_a_boundary_picks_that_token(self):
-        cumulative = [0.25, 0.5, 0.75, 1.0]
-        rand = self._fixed_rand([0.0, 0.25, 0.5, 0.75])
-        self.assertEqual([0, 0, 1, 2], [EMBED.sample_negative(cumulative, rand) for _ in range(4)])
-
-    def test_never_returns_past_the_last_index(self):
-        # Rounding can leave the last entry just below 1
-        cumulative = [0.5, 0.9999999]
-        rand = self._fixed_rand([0.99999999])
-        self.assertEqual(1, EMBED.sample_negative(cumulative, rand))
-
-    def test_matches_typescript_for_seed_42(self):
-        # Reference values from running the TypeScript sampleNegative with EMBED.mulberry32(42)
-        rand = EMBED.mulberry32(42)
-        samples = [EMBED.sample_negative([0.827, 0.974, 1.0], rand) for _ in range(10)]
-        self.assertEqual([0, 0, 1, 0, 0, 0, 0, 0, 1, 0], samples)
-
-
-class TestInitNetwork(unittest.TestCase):
-    def test_one_vector_per_token_of_the_right_size(self):
-        network = EMBED.init_network(["a", "b", "c", "d", "e"], 3, EMBED.mulberry32(1))
-        self.assertEqual(5, network.vocab_size())
-        for token in range(5):
-            self.assertEqual(3, len(network.embedding(token)))
-            self.assertEqual(3, len(network.context_vector(token)))
-
-    def test_values_within_scale(self):
-        dim = 4
-        half_scale = 0.5 / dim / 2
-        network = EMBED.init_network([str(i) for i in range(10)], dim, EMBED.mulberry32(7))
-        for token in range(10):
-            for weight in network.embedding(token) + network.context_vector(token):
-                self.assertLessEqual(abs(weight), half_scale)
-
-    def test_every_synapse_is_a_separate_object(self):
-        network = EMBED.init_network(["a", "b", "c"], 2, EMBED.mulberry32(1))
-        synapses = [synapse for neuron in network.net.neurons for synapse in neuron.synapses_out]
-        self.assertEqual(3 * 2 + 2 * 3, len({id(synapse) for synapse in synapses}))
-
-    def test_matches_typescript_for_seed_42(self):
-        # Reference values from running the TypeScript initialisation with mulberry32(42),
-        # vocabSize = 2, dim = 2. The TypeScript stores them flat: token 0 then token 1.
-        network = EMBED.init_network(["a", "b"], 2, EMBED.mulberry32(42))
-        self.assertEqual([[0.025275937980040908, 0.08811644837260246],
-                          [-0.08129652531351894, -0.056693001417443156]],
-                         [network.embedding(0), network.embedding(1)])
-        self.assertEqual([[-0.012927360250614583, 0.04243351035984233],
-                          [0.006648135546129197, 0.031186163483653218]],
-                         [network.context_vector(0), network.context_vector(1)])
-
-
-class TestShuffle(unittest.TestCase):
-    def test_keeps_the_same_items(self):
-        pairs = [(i, i + 1) for i in range(20)]
-        shuffled = list(pairs)
-        EMBED.shuffle(shuffled, EMBED.mulberry32(3))
-        self.assertEqual(sorted(pairs), sorted(shuffled))
-        self.assertNotEqual(pairs, shuffled)
-
-    def test_same_seed_gives_same_order(self):
-        first = [(i, i) for i in range(10)]
-        second = [(i, i) for i in range(10)]
-        EMBED.shuffle(first, EMBED.mulberry32(42))
-        EMBED.shuffle(second, EMBED.mulberry32(42))
-        self.assertEqual(first, second)
-
-    def test_matches_typescript_for_seed_42(self):
-        # Reference order from running the TypeScript Fisher-Yates shuffle on 0..9 with EMBED.mulberry32(42)
-        items = [(i, i) for i in range(10)]
-        EMBED.shuffle(items, EMBED.mulberry32(42))
-        self.assertEqual([0, 7, 3, 5, 2, 1, 8, 9, 4, 6], [item[0] for item in items])
-
-    def test_empty_and_single_item(self):
-        empty: list[tuple[int, int]] = []
-        EMBED.shuffle(empty, EMBED.mulberry32(1))
-        self.assertEqual([], empty)
-        single = [(1, 2)]
-        EMBED.shuffle(single, EMBED.mulberry32(1))
-        self.assertEqual([(1, 2)], single)
-
-
-class TestLearningRate(unittest.TestCase):
-    def test_falls_in_a_straight_line(self):
-        rates = [EMBED.learning_rate(epoch, 4, 0.025, 0.001) for epoch in range(5)]
-        for expected, actual in zip([0.025, 0.019, 0.013, 0.007, 0.001], rates):
-            self.assertAlmostEqual(expected, actual)
-
-    def test_zero_epochs_uses_start_rate(self):
-        self.assertEqual(0.025, EMBED.learning_rate(0, 0, 0.025, 0.001))
-
-
-class TestTrainEpoch(unittest.TestCase):
-    def test_no_pairs_gives_zero_loss(self):
+    def test_token_embeddings_are_rounded_first(self):
+        # 0.1234564 rounds to 0.123456, so the similarity uses that, not the raw weight
         network = SkipGramNetwork(["a"], 1)
-        self.assertEqual(0.0, EMBED.train_epoch([], network, 3, [1.0], EMBED.mulberry32(1), 0.1))
-
-    def test_loss_falls_over_epochs(self):
-        rand = EMBED.mulberry32(42)
-        network = SkipGramNetwork(["a", "b", "c", "d"], 2)
-        for token in range(4):
-            network.set_embedding(token, [(rand() - 0.5) * 0.1 for _ in range(2)])
-        for token in range(4):
-            network.set_context_vector(token, [(rand() - 0.5) * 0.1 for _ in range(2)])
-        pairs = [(0, 1), (1, 0), (2, 3), (3, 2)]
-        cumulative = [0.25, 0.5, 0.75, 1.0]
-        losses = [EMBED.train_epoch(pairs, network, 2, cumulative, rand, 0.5) for _ in range(30)]
-        self.assertLess(losses[-1], losses[0])
-
-    def test_negative_equal_to_context_is_skipped(self):
-        # Only one token, so every negative is the context itself: only the positive is trained
-        network = SkipGramNetwork(["a"], 2)
-        loss = EMBED.train_epoch([(0, 0)], network, 5, [1.0], EMBED.mulberry32(1), 0.1)
-        self.assertAlmostEqual(math.log(2), loss)
+        network.set_embedding(0, [0.1234564])
+        [(index, similarity)] = EMBED.similarity_to_every_token(network, [2.0], set())
+        self.assertEqual(0, index)
+        self.assertEqual(EMBED.cosine_similarity([2.0], [0.123456]), similarity)
 
 
 class TestRoundLikeJs(unittest.TestCase):

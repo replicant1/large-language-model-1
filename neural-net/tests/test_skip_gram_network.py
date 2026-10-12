@@ -2,6 +2,7 @@ import unittest
 import math
 from neuron import sigmoid
 from embed import dot
+from random_numbers import mulberry32
 from skip_gram_network import SkipGramNetwork
 
 
@@ -75,6 +76,52 @@ class TestInitializeWeights(unittest.TestCase):
         self.assertEqual([(0.2 - 0.5) * scale, (0.4 - 0.5) * scale], network.context_vector(0))
         self.assertEqual([(0.5 - 0.5) * scale, (0.7 - 0.5) * scale], network.embedding(1))
         self.assertEqual([(0.6 - 0.5) * scale, (0.8 - 0.5) * scale], network.context_vector(1))
+
+    def test_rand_given_to_the_constructor_initialises_the_weights(self):
+        draws = iter([0.1, 0.2, 0.3, 0.4])
+        network = SkipGramNetwork(["a"], 2, lambda: next(draws))
+        scale = 0.5 / 2
+        self.assertEqual([(0.1 - 0.5) * scale, (0.3 - 0.5) * scale], network.embedding(0))
+        self.assertEqual([(0.2 - 0.5) * scale, (0.4 - 0.5) * scale], network.context_vector(0))
+
+    def test_without_rand_every_weight_starts_at_zero(self):
+        network = SkipGramNetwork(["a", "b"], 3)
+        self.assertEqual([[0.0] * 3] * 2, [network.embedding(0), network.embedding(1)])
+        self.assertEqual([[0.0] * 3] * 2, [network.context_vector(0), network.context_vector(1)])
+
+
+# The starting weights SkipGramNetwork sets when given the seeded generator
+class TestNetworkStartingWeights(unittest.TestCase):
+    def test_one_vector_per_token_of_the_right_size(self):
+        network = SkipGramNetwork(["a", "b", "c", "d", "e"], 3, mulberry32(1))
+        self.assertEqual(5, network.vocab_size())
+        for token in range(5):
+            self.assertEqual(3, len(network.embedding(token)))
+            self.assertEqual(3, len(network.context_vector(token)))
+
+    def test_values_within_scale(self):
+        dim = 4
+        half_scale = 0.5 / dim / 2
+        network = SkipGramNetwork([str(i) for i in range(10)], dim, mulberry32(7))
+        for token in range(10):
+            for weight in network.embedding(token) + network.context_vector(token):
+                self.assertLessEqual(abs(weight), half_scale)
+
+    def test_every_synapse_is_a_separate_object(self):
+        network = SkipGramNetwork(["a", "b", "c"], 2, mulberry32(1))
+        synapses = [synapse for neuron in network.net.neurons for synapse in neuron.synapses_out]
+        self.assertEqual(3 * 2 + 2 * 3, len({id(synapse) for synapse in synapses}))
+
+    def test_matches_typescript_for_seed_42(self):
+        # Reference values from running the TypeScript initialisation with mulberry32(42),
+        # vocabSize = 2, dim = 2. The TypeScript stores them flat: token 0 then token 1.
+        network = SkipGramNetwork(["a", "b"], 2, mulberry32(42))
+        self.assertEqual([[0.025275937980040908, 0.08811644837260246],
+                          [-0.08129652531351894, -0.056693001417443156]],
+                         [network.embedding(0), network.embedding(1)])
+        self.assertEqual([[-0.012927360250614583, 0.04243351035984233],
+                          [0.006648135546129197, 0.031186163483653218]],
+                         [network.context_vector(0), network.context_vector(1)])
 
 
 class TestTrainPair(unittest.TestCase):

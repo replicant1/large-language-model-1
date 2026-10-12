@@ -1,5 +1,5 @@
 import math
-from typing import Callable
+from typing import Callable, Optional
 from neuron import identity, sigmoid
 from neural_net_builder import NeuralNetBuilder
 
@@ -18,6 +18,9 @@ class SkipGramNetwork:
     neuron (what used to be called w_in); its context vector is the weights on the synapses
     coming into its output neuron (what used to be called w_out).
 
+    If rand is given, every synapse starts with a small random weight (see initialize_weights);
+    otherwise every weight starts at 0.
+
     Example, tokens ["the", "cat"] and dim = 2:
 
         input:the ──┬──▶ hidden:0 ──┬──▶ output:the
@@ -27,7 +30,7 @@ class SkipGramNetwork:
         context_vector(0)  = weights of hidden:0 -> output:the and hidden:1 -> output:the
     """
 
-    def __init__(self, token_names: list[str], dim: int):
+    def __init__(self, token_names: list[str], dim: int, rand: Optional[Callable[[], float]] = None):
         vocab_size = len(token_names)
         self.dim = dim
         self.net = NeuralNetBuilder(
@@ -40,6 +43,8 @@ class SkipGramNetwork:
         self.input_layer = self.net.layer("input")
         self.hidden_layer = self.net.layer("hidden")
         self.output_layer = self.net.layer("output")
+        if rand is not None:
+            self.initialize_weights(rand)
 
     def vocab_size(self) -> int:
         return self.input_layer.size()

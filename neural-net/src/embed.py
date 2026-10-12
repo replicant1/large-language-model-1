@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, Iterator
+from typing import Iterator
 import json
 import math
 from dataclasses import dataclass
@@ -7,6 +7,8 @@ from pathlib import Path
 
 from bpe import BPETokenizer, Token, TokenFreqSet, TokenList, Vocabulary
 from skip_gram_network import SkipGramNetwork
+from skip_gram_trainer import SkipGramTrainer, build_negative_sampling_table
+from random_numbers import mulberry32
 
 ## Curated training corpus for Word2Vec Skip-gram and transformer training.
 ##
@@ -313,20 +315,6 @@ class Embed:
     def tokenize(self, text: str) -> TokenList:
         return self.tokenizer.tokenize(text.lower())
 
-    # Seendable random number generator
-    def mulberry32(self, seed: int) -> Callable[[], float]:
-        MASK = 0xFFFFFFFF  # keep values to 32 bits, like JavaScript
-        state = int(seed) & MASK
-
-        def next_random() -> float:
-            nonlocal state
-            state = (state + 0x6D2B79F5) & MASK
-            t = ((state ^ (state >> 15)) * (1 | state)) & MASK
-            t = ((t + (((t ^ (t >> 7)) * (61 | t)) & MASK)) & MASK) ^ t
-            return ((t ^ (t >> 14)) & MASK) / 4294967296
-
-        return next_random
-
     # Builds the skip-gram training pairs: (target, context) vocabulary indices.
     # Every token is paired with every other token within window_size positions of it in
     # the same sentence. Pairs never cross from one sentence into the next.
@@ -346,149 +334,6 @@ class Embed:
                     if j != i:
                         pairs.append((indices[i], indices[j]))
         return pairs
-
-    # Builds the table used to pick negative samples, returned as a running total
-    # (cumulative) of each token's probability of being picked.
-    #
-    # Negative sampling a): for each real (target, context) pair, training also picks a few
-    # random tokens as "wrong" contexts, so the model learns which tokens do NOT go together.
-    # This builds the probability of each token being picked as one of those negatives.
-    #
-    # Each token's weight is its frequency raised to the power 0.75 (Mikolov's trick from
-    # word2vec), then all weights are divided by their total so they add up to 1.
-    # The 0.75 power flattens the differences: common tokens are still picked more often,
-    # but rare tokens get a bigger share than their raw count would give them.
-    #
-    # Example with three tokens:
-    #
-    #   token   frequency   raw share   frequency ** 0.75   unigram_power (final share)
-    #   the     100         90.1%       31.62               0.827  (82.7%)
-    #   cat     10           9.0%        5.62               0.147  (14.7%)
-    #   mat     1            0.9%        1.00               0.026   (2.6%)
-    #
-    # Negative sampling b): Running total of unigram_power, used to pick a negative token at random.
-    # Each token "owns" a stretch of the range 0 to 1 as wide as its probability, so drawing
-    # a random number r in that range and finding the first entry in cumulative that is >= r
-    # picks each token with exactly its probability.
-    #
-    # Example, continuing from above:
-    #
-    #   token           the     cat     mat
-    #   unigram_power   0.827   0.147   0.026
-    #   cumulative      0.827   0.974   1.000
-    #
-    #   r = 0.50  ->  first entry >= 0.50 is 0.827  ->  the
-    #   r = 0.90  ->  first entry >= 0.90 is 0.974  ->  cat
-    #   r = 0.99  ->  first entry >= 0.99 is 1.000  ->  mat
-    #
-    # (The TypeScript comment calls this an "alias table for O(1) sampling", but it is a
-    # cumulative table: finding the entry takes O(log n) with a binary search.)
-    def build_negative_sampling_table(self, vocabulary: Vocabulary) -> list[float]:
-        vocab_size = vocabulary.size()
-
-        unigram_power: list[float] = [0.0] * vocab_size
-        unigram_sum = 0.0
-        for i in range(vocab_size):
-            count = vocabulary.frequency_at(i)
-            unigram_power[i] = count ** 0.75
-            unigram_sum += unigram_power[i]
-        for i in range(vocab_size):
-            unigram_power[i] /= unigram_sum
-
-        cumulative: list[float] = [0.0] * vocab_size
-        cumulative[0] = unigram_power[0]
-        for i in range(1, vocab_size):
-            cumulative[i] = cumulative[i - 1] + unigram_power[i]
-        return cumulative
-
-    # Picks one token index at random to use as a negative, with each token's chance given
-    # by the negative sampling table. Draws r in the range 0 to 1, then binary-searches
-    # cumulative for the first entry >= r.
-    #
-    # Example, with cumulative = [0.827, 0.974, 1.000] and r = 0.90:
-    #
-    #   lo=0, hi=2, mid=1:  cumulative[1] = 0.974 >= 0.90  ->  hi = 1
-    #   lo=0, hi=1, mid=0:  cumulative[0] = 0.827 <  0.90  ->  lo = 1
-    #   lo == hi == 1       ->  returns 1 (cat)
-    #
-    # hi starts at the last index, so the result is always a valid index, even if
-    # rounding leaves the last cumulative entry slightly below 1.
-    def sample_negative(self, cumulative: list[float], rand: Callable[[], float]) -> int:
-        r = rand()
-        lo = 0
-        hi = len(cumulative) - 1
-        while lo < hi:
-            mid = (lo + hi) // 2
-            if cumulative[mid] < r:
-                lo = mid + 1
-            else:
-                hi = mid
-        return lo
-
-    # Builds the skip-gram network for the given tokens, with dim hidden neurons, and gives
-    # every synapse a small random starting weight (see SkipGramNetwork.initialize_weights).
-    #
-    # Each token gets an input neuron and an output neuron. Its embedding is the weights on
-    # the synapses out of its input neuron (the vectors we keep at the end); its context
-    # vector is the weights on the synapses into its output neuron.
-    def init_network(self, token_names: list[str], dim: int, rand: Callable[[], float]) -> SkipGramNetwork:
-        network = SkipGramNetwork(token_names, dim)
-        network.initialize_weights(rand)
-        return network
-
-    # Fisher-Yates shuffle: puts the pairs into a random order, in place.
-    # Working back from the last position, swap each item with a randomly chosen
-    # item at or before it. Every ordering is equally likely.
-    #
-    # Example, shuffling [A, B, C, D]:
-    #
-    #   i=3: j=1  ->  swap D and B  ->  [A, D, C, B]
-    #   i=2: j=2  ->  C stays put   ->  [A, D, C, B]
-    #   i=1: j=0  ->  swap D and A  ->  [D, A, C, B]
-    #
-    # Uses rand() rather than Python's random.shuffle, so the order depends only on the seed.
-    def shuffle(self, arr: list[tuple[int, int]], rand: Callable[[], float]) -> None:
-        for i in range(len(arr) - 1, 0, -1):
-            j = math.floor(rand() * (i + 1))
-            arr[i], arr[j] = arr[j], arr[i]
-
-    # Learning rate for a given epoch: falls in a straight line from lr_start at epoch 0
-    # to lr_end at the last epoch.
-    #
-    # Example, with lr_start = 0.025, lr_end = 0.001 and epochs = 4:
-    #
-    #   epoch   0       1       2       3       4
-    #   lr      0.025   0.019   0.013   0.007   0.001
-    def learning_rate(self, epoch: int, epochs: int, lr_start: float, lr_end: float) -> float:
-        if epochs == 0:
-            return lr_start
-        return lr_start - (lr_start - lr_end) * (epoch / epochs)
-
-    # Runs one epoch: shuffles the pairs, then for each (target, context) pair trains on the
-    # positive pair and on negative_samples random negatives. Returns the average loss per pair.
-    #
-    # A negative that happens to be the real context is skipped, since it isn't really "wrong".
-    def train_epoch(self, pairs: list[tuple[int, int]], network: SkipGramNetwork,
-                    negative_samples: int, cumulative: list[float], rand: Callable[[], float],
-                    lr: float) -> float:
-        if not pairs:
-            return 0.0
-
-        total_loss = 0.0
-        self.shuffle(pairs, rand)
-
-        for target, context in pairs:
-            # Positive sample: push target and context closer
-            total_loss += network.train_pair(target, context, 1, lr)
-
-            # Negative samples: push target and random tokens apart
-            for _ in range(negative_samples):
-                neg = self.sample_negative(cumulative, rand)
-                if neg == context:
-                    continue
-                total_loss += network.train_pair(target, neg, 0, lr)
-
-        return total_loss / len(pairs)
 
     # Rounds to the given number of decimal places, rounding halves up like JavaScript's
     # Math.round(value * 10**places) / 10**places. (Python's round() rounds halves to the
@@ -511,6 +356,17 @@ class Embed:
     # A word's embedding as a plain list, rounded to 6 decimal places
     def get_vector(self, network: SkipGramNetwork, word_index: int) -> list[float]:
         return [self.round_like_js(value, 6) for value in network.embedding(word_index)]
+
+    # Compares the given vector with every token's embedding by cosine similarity, skipping the
+    # tokens in exclude. Returns (token index, similarity) pairs in vocabulary order.
+    # Each token's embedding is rounded to 6 places first (get_vector), as the TypeScript does;
+    # the given vector is used as it is.
+    #
+    # Example, with 3 tokens and exclude = {1}:  [(0, 0.82), (2, -0.15)]
+    def similarity_to_every_token(self, network: SkipGramNetwork, vector: list[float],
+                                  exclude: set[int]) -> list[tuple[int, float]]:
+        return [(index, self.cosine_similarity(vector, self.get_vector(network, index)))
+                for index in range(network.vocab_size()) if index not in exclude]
 
     # Looks up each query word in the vocabulary. Returns the indexes of words that are
     # single BPE tokens, plus a warning for each word that splits into several tokens.
@@ -539,7 +395,7 @@ class Embed:
 
         # Uses the tokenizer and vocabulary built in __init__
         vocab_size = self.vocabulary.size()
-        rand = self.mulberry32(42)
+        rand = mulberry32(42)
 
         # Encode each sentence as vocabulary indices, then pair up nearby tokens
         sentences_as_indices = [self.vocabulary.encode(self.tokenize(sentence)) for sentence in CORPUS]
@@ -554,23 +410,16 @@ class Embed:
             totalPairs=len(positive_pairs)
         )
 
-        negative_sampling_table = self.build_negative_sampling_table(self.vocabulary)
-        network = self.init_network([token.token for token in self.vocabulary.index_to_token], embeded_vector_size, rand)
+        negative_sampling_table = build_negative_sampling_table(self.vocabulary)
+        network = SkipGramNetwork([token.token for token in self.vocabulary.index_to_token], embeded_vector_size, rand)
+        trainer = SkipGramTrainer(network, positive_pairs, negative_sampling_table, rand, negative_samples)
 
         # How often (in epochs) to report progress: about 50 reports over the whole run,
         # but never less than every epoch. For example, 200 epochs -> every 4th epoch;
         # 30 epochs -> every epoch.
         step = max(1, epochs // 50)
 
-        # The learning rate starts at lr_start and falls to lr_end over training, so early
-        # updates make big changes and later ones make fine adjustments.
-        lr_start = 0.025
-        lr_end = 0.001
-
-        # Note: epochs + 1 passes (0 to epochs inclusive), as in the TypeScript
-        for epoch in range(epochs + 1):
-            lr = self.learning_rate(epoch, epochs, lr_start, lr_end)
-            loss = self.train_epoch(positive_pairs, network, negative_samples, negative_sampling_table, rand, lr)
+        for epoch, loss in trainer.train(epochs):
             if epoch % step == 0 or epoch == epochs:
                 yield EpochResult(epoch=epoch, loss=self.round_like_js(loss, 6))
 
@@ -584,14 +433,8 @@ class Embed:
         neighbors: list[Neighbor] = []
         for query_index in query_indices:
             query_vector = self.get_vector(network, query_index)
-            scores: list[NeighborScore] = []
-            for index in range(vocab_size):
-                if index == query_index:
-                    continue
-                scores.append(NeighborScore(
-                    word=self.vocabulary.token_at(index).token,
-                    score=self.round_like_js(self.cosine_similarity(query_vector, self.get_vector(network, index)), 2)
-                ))
+            scores = [NeighborScore(word=self.vocabulary.token_at(index).token, score=self.round_like_js(similarity, 2))
+                      for index, similarity in self.similarity_to_every_token(network, query_vector, {query_index})]
             # sort() is stable, like JavaScript's, so tied scores keep vocabulary order
             scores.sort(key=lambda neighbor_score: neighbor_score.score, reverse=True)
             neighbors.append(Neighbor(word=self.vocabulary.token_at(query_index).token, nearest=scores[:5]))
@@ -619,20 +462,12 @@ class Embed:
 
             # Uses the unrounded weights, as the TypeScript does
             a_vector, b_vector, c_vector = network.embedding(a_index), network.embedding(b_index), network.embedding(c_index)
-            result_vector = [a_vector[d] - b_vector[d] + c_vector[d] for d in range(embeded_vector_size)]
+            result_vector = [a_vector[d] - b_vector[d] + c_vector[d] for d in range(network.dim)]
 
-            best_index = -1
-            best_score = -math.inf
-            exclude = {a_index, b_index, c_index}
-            for index in range(vocab_size):
-                if index in exclude:
-                    continue
-                score = self.cosine_similarity(result_vector, self.get_vector(network, index))
-                if score > best_score:
-                    best_score = score
-                    best_index = index
-
-            if best_index >= 0:
+            candidates = self.similarity_to_every_token(network, result_vector, {a_index, b_index, c_index})
+            if candidates:
+                # max() keeps the first of any tied scores, so a tie goes to the earlier token
+                best_index, best_score = max(candidates, key=lambda candidate: candidate[1])
                 analogies.append(Analogy(
                     query=f"{a} - {b} + {c}",
                     result=self.vocabulary.token_at(best_index).token,
@@ -642,12 +477,12 @@ class Embed:
         # Save the trained model, so it can be used later without retraining
         saved_model = {
             "type": "word2vec-skipgram",
-            "dimensions": embeded_vector_size,
+            "dimensions": network.dim,
             "vocab": [token.token for token in self.vocabulary.index_to_token],
             "merges": [{"pair": [rule.pair[0].token, rule.pair[1].token], "merged": rule.merged.token}
                        for rule in self.tokenizer.merge_rules],
             "embeddings": {self.vocabulary.token_at(index).token: self.get_vector(network, index)
-                           for index in range(vocab_size)},
+                           for index in range(network.vocab_size())},
         }
         weights_path = Path(__file__).resolve().parent.parent / ".data" / "embedding-weights.json"
         weights_path.parent.mkdir(parents=True, exist_ok=True)
