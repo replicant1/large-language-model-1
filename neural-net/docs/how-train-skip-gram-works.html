@@ -135,6 +135,19 @@ details.deeper > summary::before { content: "▸"; display: inline-block; width:
 details.deeper[open] > summary::before { transform: rotate(90deg); }
 details.deeper > summary .tag { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-left: 8px; }
 details.deeper > .body { padding: 0 16px 8px; border-top: 1px solid var(--line); }
+p.muted { color: var(--muted); }
+.sim-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+.sim-controls button { font: inherit; font-size: 0.85rem; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); cursor: pointer; }
+.sim-controls button:hover { border-color: var(--accent); }
+.sim-controls button.pos { border-color: var(--pos); color: var(--pos); }
+.sim-controls button.neg { border-color: var(--neg); color: var(--neg); }
+.sim-controls button.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.sim-readout { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 10px; }
+@media (max-width: 640px) { .sim-readout { grid-template-columns: repeat(2, 1fr); } }
+.sim-readout div { background: var(--surface-2); border-radius: 6px; padding: 6px 10px; }
+.sim-readout small { display: block; color: var(--muted); font-size: 0.72rem; }
+.sim-readout b { font-family: ui-monospace, Menlo, monospace; font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+.sim-explain { font-size: 0.92rem; margin: 10px 0 0; min-height: 3em; }
 </style>
 </head>
 <body>
@@ -162,6 +175,7 @@ details.deeper > .body { padding: 0 16px 8px; border-top: 1px solid var(--line);
 <li><a href="#refine">How embeddings are refined</a></li>
 <li><a href="#random">The role of randomness</a></li>
 <li><a href="#results">After training: the results</a></li>
+<li><a href="#leads">Where this leads</a></li>
 <li><a href="#glossary">Glossary</a></li>
 </ol>
 </nav>
@@ -365,7 +379,87 @@ sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span clas
 <figcaption>Every row is one token's <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L291-L331" target="_blank" rel="noopener"><code>EmbeddingVector</code></a>. A token has <em>two</em> vectors: one used when it's the target (<a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_in</code></a>) and one used when it's the context (<a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_out</code></a>). Only <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_in</code></a> is kept as the embedding at the end. The colours illustrate the kind of starting values: small random numbers, some positive (blue) and some negative (red).</figcaption>
 </figure>
 
-<p>Why two tables? It keeps the maths simple. "king as a target" and "king as someone else's context" play different roles in the guessing game, so each gets its own vector. Many implementations do the same and throw <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L482-L494" target="_blank" rel="noopener"><code>w_out</code></a> away at the end.</p>
+<h3 id="target-vs-context">Target vs context: two roles, two vectors</h3>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L382-L384" target="_blank" rel="noopener"><span class="src-name">indices[i] is the target, indices[j] the context</span><span class="src-loc">embed.py lines 382–384</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L550-L551" target="_blank" rel="noopener"><span class="src-name">target uses w_in, context uses w_out</span><span class="src-loc">embed.py lines 550–551</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L583-L586" target="_blank" rel="noopener"><span class="src-name">negatives replace the context</span><span class="src-loc">embed.py lines 583–586</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L610-L612" target="_blank" rel="noopener"><span class="src-name">only w_in is kept</span><span class="src-loc">embed.py lines 610–612</span></a></div>
+
+<p>"Target" and "context" are <strong>roles in a pair</strong>, not kinds of token. The <strong>target</strong> is the token at the centre of the window, the one being asked about. The <strong>context</strong> is one of its neighbours within <code>window_size</code>. Each pair asks: <em>"Given this target, is this a token that appears around it?"</em> That's where the name comes from: skip-gram predicts the surrounding words from the centre word. (Its sister method, CBOW, does the reverse.)</p>
+
+<h3 id="two-relations">The linguistic rationale: words relate in two ways</h3>
+
+<p>Why give every token two vectors in the first place? Because <strong>words relate to each other in two different ways</strong>, and the two vectors give the model a separate place to learn each one. Linguists have distinguished these two relations since Ferdinand de Saussure, over a century ago:</p>
+
+<figure>
+<svg viewBox="0 0 720 330" role="img" aria-label="Syntagmatic axis runs along the sentence; paradigmatic axis runs through words that could fill the same slot"><rect x="200" y="56" width="100" height="236" rx="12" fill="var(--accent-soft)" stroke="var(--accent)" stroke-dasharray="5 4"/><rect x="70" y="70" width="100" height="40" rx="8" class="box-pos"/><text x="120" y="96" text-anchor="middle" class="mono" font-weight="700" font-size="15">the</text><rect x="200" y="70" width="100" height="40" rx="8" class="box-accent"/><text x="250" y="96" text-anchor="middle" class="mono" font-weight="700" font-size="15">king</text><rect x="330" y="70" width="100" height="40" rx="8" class="box-pos"/><text x="380" y="96" text-anchor="middle" class="mono" font-weight="700" font-size="15">was</text><rect x="470" y="70" width="100" height="40" rx="8" class="box-pos"/><text x="520" y="96" text-anchor="middle" class="mono" font-weight="700" font-size="15">crowned</text><rect x="200" y="132" width="100" height="36" rx="8" class="box"/><text x="250" y="156" text-anchor="middle" class="mono" font-size="14">queen</text><rect x="200" y="182" width="100" height="36" rx="8" class="box"/><text x="250" y="206" text-anchor="middle" class="mono" font-size="14">prince</text><rect x="200" y="232" width="100" height="36" rx="8" class="box"/><text x="250" y="256" text-anchor="middle" class="mono" font-size="14">man</text><path d="M60 40 H660" stroke="var(--pos)" stroke-width="2.5" marker-end="url(#arrP)"/><text x="60" y="30" font-size="13" font-weight="700" fill="var(--pos)">syntagmatic axis: words that go together in sequence</text><path d="M330 70 V290" stroke="var(--accent)" stroke-width="2.5" marker-end="url(#arrA)"/><text x="345" y="170" font-size="13" font-weight="700" fill="var(--accent)">paradigmatic axis:</text><text x="345" y="188" font-size="13" fill="var(--accent)">words that could fill the same slot</text><text x="345" y="214" font-size="12" class="muted">"the queen was crowned", "the prince</text><text x="345" y="230" font-size="12" class="muted">was crowned", "the man was crowned"</text><text x="360" y="320" text-anchor="middle" font-size="12" class="muted">"the man was crowned king", "the woman was crowned queen": both are real CORPUS sentences</text></svg>
+<figcaption>Reading along the sentence gives the <strong>syntagmatic</strong> relation: <em>was</em> and <em>crowned</em> go with <em>king</em>. Reading down the slot gives the <strong>paradigmatic</strong> relation: <em>queen</em>, <em>prince</em> and <em>man</em> could replace <em>king</em>.</figcaption>
+</figure>
+
+<table>
+<thead><tr><th>Relation</th><th>Question it answers</th><th>Example</th><th>Learned by</th></tr></thead>
+<tbody>
+<tr><td><strong>Syntagmatic</strong> (combination)</td><td>Which words go <em>next to</em> this word?</td><td>king → <em>crowned</em>, <em>was</em>, <em>became</em></td><td><code>w_in[king] · w_out[x]</code></td></tr>
+<tr><td><strong>Paradigmatic</strong> (substitution)</td><td>Which words could <em>replace</em> this word?</td><td>king → <em>queen</em>, <em>prince</em></td><td><code>w_in[king] · w_in[x]</code></td></tr>
+</tbody>
+</table>
+
+<p>Crucially, <strong>the two relations point to different words.</strong> The words that are similar to "cat" (dog, mouse) are mostly <em>not</em> the words that appear next to "cat" (the, sat, chased). A word is almost never next to its substitutes (you don't say "the cat dog sat"), and almost never a substitute for its neighbours ("the" can't replace "cat").</p>
+
+<h3>Why that forces two vectors</h3>
+<p>Suppose each token had only one vector, and the score were <code>sigmoid(v_cat · v_x)</code>. Training would have to make <code>v_cat · v_the</code> large, because "the" appears next to "cat" constantly. But that same dot product is also what we'd use to measure similarity, so "cat" would come out <em>similar</em> to "the". A single vector per word can't keep "goes next to" separate from "is like". It mixes the two relations up.</p>
+<p>With two tables, the jobs are split:</p>
+<ul>
+<li><strong><code>w_in</code> · <code>w_out</code></strong> (target against context) learns the syntagmatic relation. It's the training signal: "does x appear next to this word?"</li>
+<li><strong><code>w_in</code> · <code>w_in</code></strong> (target against target) gives the paradigmatic relation for free. Two words whose target vectors are pulled towards the same context vectors end up alike.</li>
+</ul>
+
+<h3>Your trained model shows the split</h3>
+<p>After the 100-epoch run (seed 42), here are the tokens closest to "king", measured both ways:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compared with</th><th>Closest tokens</th><th>What they are</th></tr></thead>
+<tbody>
+<tr><td><code>w_in</code> (other target vectors)</td><td class="num">queen 0.96, boy 0.84, girl 0.84, prince 0.83</td><td>words that fill king's slot (paradigmatic)</td></tr>
+<tr><td><code>w_out</code> (context vectors)</td><td class="num">was, of, became, become, crowned, will</td><td>king's actual neighbours in <code>CORPUS</code> (syntagmatic)</td></tr>
+</tbody>
+</table>
+</div>
+<p>The second list matches real sentences: "the man <strong>was crowned</strong> king", "the prince <strong>will become</strong> king", "king <strong>of</strong> the land". One word gives two different, linguistically sensible lists, one from each relation.</p>
+
+<h3>The deeper root: the distributional hypothesis</h3>
+<p>Why train on the syntagmatic relation at all, when the paradigmatic one is what we want? Because of the <strong>distributional hypothesis</strong> (Harris, 1954; Firth, 1957: "you shall know a word by the company it keeps"). Words that can substitute for each other tend to keep the same company, so substitutability can be <em>discovered</em> by observing co-occurrence. Co-occurrence is directly visible in text; substitutability isn't.</p>
+<p>This makes every word play two parts: <strong>something to be described</strong> (by its company) and <strong>part of the description</strong> of other words. Distributional semantics has always drawn this as a word × context table, with words being described as rows and the contexts describing them as columns. The two vectors are those two roles: <code>w_in</code> holds each word's row vector and <code>w_out</code> its column vector. Contexts don't even have to be words. Some variants use grammatical relations or whole documents, which makes clear that "being a word" and "being a context" are different jobs.</p>
+
+<p class="muted" style="font-size:0.92rem"><em>A historical footnote:</em> word2vec didn't start from this linguistic argument. Its two matrices came from its neural-network design: an input layer (word → hidden) and an output layer (hidden → predicted word), each with its own weights. The explanation in terms of the word × context table came afterwards, notably from Levy and Goldberg (2014). Still, the reason it works matches the linguistic distinction, and so does the reason the two tables must stay separate.</p>
+
+<h3>The mechanics</h3>
+<p><strong>Every token plays both roles.</strong> In "the cat sat" with window 1, <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L367-L385" target="_blank" rel="noopener"><code>build_training_pairs</code></a> makes each token the target in turn:</p>
+<table>
+<thead><tr><th>Target (centre)</th><th>Contexts (neighbours)</th><th>Pairs</th></tr></thead>
+<tbody>
+<tr><td><code>the</code></td><td>cat</td><td>(the, cat)</td></tr>
+<tr><td><code>cat</code></td><td>the, sat</td><td><strong>(cat, the), (cat, sat)</strong></td></tr>
+<tr><td><code>sat</code></td><td>cat</td><td>(sat, cat)</td></tr>
+</tbody>
+</table>
+<p><code>cat</code> is the target in two pairs and the context in two others.</p>
+
+<p><strong>Each role uses a different table.</strong> In <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L524-L562" target="_blank" rel="noopener"><code>train_pair</code></a>, the target's vector comes from <code>w_in</code> and the context's from <code>w_out</code>:</p>
+<pre>target_vector = w_in[target]     <span class="c"># the target's "target vector"</span>
+other_vector  = w_out[other]     <span class="c"># the context's "context vector"</span></pre>
+<p>So every token has two vectors, one for each role. Negative samples always replace the <em>context</em>, never the target: "cat" stays the target and random tokens are tried in the context slot.</p>
+
+<h3>Why two vectors per token?</h3>
+<p><strong>1. A vector always agrees with itself.</strong> With a single table, the score for (cat, cat) would be <code>sigmoid(v_cat · v_cat)</code>, which is always high, because a vector points the same way as itself. The model would believe every word appears next to itself, which is rarely true. With separate tables, <code>w_in[cat]</code> and <code>w_out[cat]</code> are free to differ.</p>
+
+<p><strong>2. This is how similar words become similar.</strong> In your corpus, "king" and "queen" appear in the same window only once ("the king and queen rule the kingdom"). But they appear in parallel sentences, such as "the king wore a golden crown" and "the queen wore a silver crown", so as targets they share many of the same contexts: <code>sits</code>, <code>wore</code>, <code>crowned</code>, <code>became</code>, <code>will</code>, and more. Training keeps pulling <code>w_in[king]</code> towards those context vectors in <code>w_out</code>, and does exactly the same to <code>w_in[queen]</code>. Because both are pulled towards the same points, they end up near each other.</p>
+
+<figure>
+<svg viewBox="0 0 720 300" role="img" aria-label="w_in[king] and w_in[queen] are both pulled towards the same context vectors in w_out"><text x="110" y="24" text-anchor="middle" font-weight="700" font-size="14">w_in</text><text x="110" y="42" text-anchor="middle" class="muted" font-size="12">target vectors</text><text x="560" y="24" text-anchor="middle" font-weight="700" font-size="14">w_out</text><text x="560" y="42" text-anchor="middle" class="muted" font-size="12">context vectors</text><rect x="50" y="105" width="120" height="40" rx="8" class="box-accent"/><text x="110" y="131" text-anchor="middle" class="mono" font-weight="700" font-size="15">king</text><rect x="50" y="205" width="120" height="40" rx="8" class="box-accent"/><text x="110" y="231" text-anchor="middle" class="mono" font-weight="700" font-size="15">queen</text><rect x="500" y="62" width="120" height="34" rx="7" class="box-pos"/><text x="560" y="84" text-anchor="middle" class="mono" font-weight="600" font-size="14">sits</text><path d="M170 125 C 320 125, 350 79, 498 79" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><path d="M170 225 C 320 225, 350 79, 498 79" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><rect x="500" y="108" width="120" height="34" rx="7" class="box-pos"/><text x="560" y="130" text-anchor="middle" class="mono" font-weight="600" font-size="14">wore</text><path d="M170 125 C 320 125, 350 125, 498 125" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><path d="M170 225 C 320 225, 350 125, 498 125" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><rect x="500" y="154" width="120" height="34" rx="7" class="box-pos"/><text x="560" y="176" text-anchor="middle" class="mono" font-weight="600" font-size="14">crowned</text><path d="M170 125 C 320 125, 350 171, 498 171" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><path d="M170 225 C 320 225, 350 171, 498 171" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><rect x="500" y="200" width="120" height="34" rx="7" class="box-pos"/><text x="560" y="222" text-anchor="middle" class="mono" font-weight="600" font-size="14">became</text><path d="M170 125 C 320 125, 350 217, 498 217" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><path d="M170 225 C 320 225, 350 217, 498 217" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><rect x="500" y="246" width="120" height="34" rx="7" class="box-pos"/><text x="560" y="268" text-anchor="middle" class="mono" font-weight="600" font-size="14">will</text><path d="M170 125 C 320 125, 350 263, 498 263" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><path d="M170 225 C 320 225, 350 263, 498 263" fill="none" stroke="var(--pos)" stroke-width="1.6" opacity="0.75" marker-end="url(#arrP)"/><text x="110" y="280" text-anchor="middle" font-size="13" font-weight="600" fill="var(--accent)">⇒ end up close together</text><text x="560" y="300" text-anchor="middle" font-size="12" class="muted">shared contexts in CORPUS (window 2)</text></svg>
+<figcaption>Real shared contexts of "king" and "queen" in <code>CORPUS</code> (window 2). Every arrow is a pull that happens each time that pair is trained. Two target vectors pulled towards the same context vectors end up close together. In your 100-epoch run, king/queen cosine similarity reached 0.96.</figcaption>
+</figure>
+
+<div class="callout pos"><p><strong>The key idea:</strong> a target vector comes to mean "the kinds of neighbours I have". Two words with similar neighbours get similar target vectors, even if they rarely or never appear together. That is what an embedding is.</p></div>
+
+<p><strong>Which table is kept?</strong> At the end, <code>w_in</code> (the target vectors) are the embeddings. They're what <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L610-L612" target="_blank" rel="noopener"><code>get_vector</code></a> reads and what gets saved. <code>w_out</code> was scaffolding: the reference points the target vectors were pulled towards. (They move too, since <code>train_pair</code> nudges both vectors, but they're not used afterwards.) Some implementations average or add the two tables instead, but keeping only <code>w_in</code> is the most common choice.</p>
 
 <p>The starting values are small random numbers between <span class="num">−scale/2</span> and <span class="num">+scale/2</span>, where <span class="num">scale = 0.5 / 32 = 0.015625</span>. Here are the first six of king's 32 starting values (seed 42):</p>
 <pre>w_in[king] = [-0.00352, 0.00276, 0.00497, -0.00729, -0.00632, 0.00568, …]</pre>
@@ -649,6 +743,41 @@ sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span clas
 <figcaption>Dashed: before the nudge. Solid: after. The change is greatly exaggerated here; real nudges are tiny.</figcaption>
 </figure>
 
+<h3 id="nudge-sim">Watch the nudges happen</h3>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L553-L554" target="_blank" rel="noopener"><span class="src-name">score and grad</span><span class="src-loc">embed.py lines 553–554</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L556-L558" target="_blank" rel="noopener"><span class="src-name">both vectors nudged</span><span class="src-loc">embed.py lines 556–558</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L577-L586" target="_blank" rel="noopener"><span class="src-name">positive, then negatives, for each pair</span><span class="src-loc">embed.py lines 577–586</span></a></div>
+
+<p>This diagram runs the <strong>exact <code>train_pair</code> formula</strong> on four vectors drawn as arrows. Solid arrows are target vectors (<code>w_in</code>) and dashed arrows are context vectors (<code>w_out</code>). Both tables hold vectors of the same size and are compared with a dot product, so they can be drawn on the same axes. Press a button to train one pair: the faint arrow shows where the vector was, and the small arrow shows the nudge, <code>grad × other_vector</code>.</p>
+
+<figure>
+<svg id="simSvg" viewBox="0 0 720 470" role="img" aria-label="Interactive diagram of target and context vectors being nudged by train_pair"></svg>
+<div class="legend" id="simLegend2"></div>
+<div class="sim-controls">
+  <button type="button" class="pos" data-step="king,crowned,1">king + crowned (real pair)</button>
+  <button type="button" class="neg" data-step="king,pizza,0">king + pizza (negative)</button>
+  <button type="button" class="pos" data-step="queen,crowned,1">queen + crowned (real pair)</button>
+  <button type="button" class="neg" data-step="queen,pizza,0">queen + pizza (negative)</button>
+</div>
+<div class="sim-controls">
+  <button type="button" class="primary" id="simPlay">▶ Play epochs</button>
+  <button type="button" id="simEpoch">One epoch (all four)</button>
+  <button type="button" id="simReset">Reset</button>
+</div>
+<div class="sim-readout">
+  <div><small>pair · label</small><b id="sPair">–</b></div>
+  <div><small>dot</small><b id="sDot">–</b></div>
+  <div><small>score = sigmoid(dot)</small><b id="sScore">–</b></div>
+  <div><small>grad = lr × (label − score)</small><b id="sGrad">–</b></div>
+  <div><small>loss</small><b id="sLoss">–</b></div>
+</div>
+<div class="sim-readout" style="grid-template-columns: repeat(3, 1fr)">
+  <div><small>epochs run</small><b id="sEpochs">0</b></div>
+  <div><small>cos(king, queen): target vs target</small><b id="sKQ">–</b></div>
+  <div><small>cos(king, pizza context)</small><b id="sKP">–</b></div>
+</div>
+<p class="sim-explain" id="sExplain">Press a button to train one pair.</p>
+<figcaption>A 2-D toy with a learning rate of 0.3, about ten times the real one, so each step is visible. Notice: a real pair's nudge always points <em>along</em> the other vector, and a negative's points directly <em>away</em> from it. Both vectors in a pair move. Press <em>Play</em> and watch king and queen, which start pointing in very different directions, swing round to point the same way, because both are pulled towards the same context, <em>crowned</em>. The arrows also get longer, as in real training (section 11).</figcaption>
+</figure>
+
 <h3>A real example: the very first nudge</h3>
 <p>With seed 42, after the first shuffle the first pair trained on is <strong>(tiny, kitten)</strong>, from "the kitten is tiny and cute" (tiny is two places after kitten, so inside the window). Here are the real numbers (first 4 of the 32 values shown):</p>
 
@@ -693,13 +822,28 @@ sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span clas
 <h2 id="loss">9. What is "loss"?</h2>
 <div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L560-L562" target="_blank" rel="noopener"><span class="src-name">loss in train_pair</span><span class="src-loc">embed.py lines 560–562</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L577-L586" target="_blank" rel="noopener"><span class="src-name">summed in train_epoch</span><span class="src-loc">embed.py lines 577–586</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L588" target="_blank" rel="noopener"><span class="src-name">averaged per pair</span><span class="src-loc">embed.py line 588</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L673-L674" target="_blank" rel="noopener"><span class="src-name">reported as EpochResult</span><span class="src-loc">embed.py lines 673–674</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L590-L593" target="_blank" rel="noopener"><span class="src-name">round_6</span><span class="src-loc">embed.py lines 590–593</span></a></div>
 
-<p><strong>Loss is a number that measures how wrong the model's guesses are.</strong> 0 means perfect; bigger means worse. Training never uses loss to decide anything. It's a report card, so you can watch the model improve.</p>
+<h3>First: what exactly is the model guessing?</h3>
+<p>For each pair of tokens (target, candidate), the model guesses:</p>
+<div class="callout"><p><strong>What's the probability that the candidate is a real neighbour of the target</strong>, meaning it came from within <code>window_size</code> tokens of the target in a <code>CORPUS</code> sentence, <strong>rather than a random token</strong> drawn by <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L441-L463" target="_blank" rel="noopener"><code>sample_negative</code></a>?</p></div>
+<p>That guess is the <strong>score</strong>, a number from 0 to 1:</p>
+<pre>score = sigmoid(w_in[target] · w_out[candidate])</pre>
+<p>The right answer is the <strong>label</strong>, which the code already knows: <strong>1</strong> if the candidate is the real context from the pair list, <strong>0</strong> if it's one of the 5 random negatives. So every guess is a yes/no question with a known answer:</p>
+<table>
+<thead><tr><th>Question</th><th>Right answer (label)</th><th>A good guess (score)</th></tr></thead>
+<tbody>
+<tr><td>Is "crowned" a real neighbour of "king"?</td><td class="ok">yes (1)</td><td>close to 1</td></tr>
+<tr><td>Is "pizza" a real neighbour of "king"?</td><td class="bad">no (0)</td><td>close to 0</td></tr>
+</tbody>
+</table>
 
-<p>For a single pair, <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L524-L562" target="_blank" rel="noopener"><code>train_pair</code></a> returns:</p>
+<h3>Then: what loss measures</h3>
+<p><strong>Loss is −log of the probability the model gave to the correct answer.</strong> 0 means the model was certain and right; bigger means worse. For each guess, <a class="code-link" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L560-L562" target="_blank" rel="noopener"><code>train_pair</code></a> returns:</p>
 <ul>
-<li>for a real pair: <code>−log(score)</code>, which is small when the score is near 1</li>
-<li>for a fake pair: <code>−log(1 − score)</code>, which is small when the score is near 0</li>
+<li>for a real pair, the correct answer is "yes", which the model gave probability <code>score</code>, so loss = <code>−log(score)</code></li>
+<li>for a negative, the correct answer is "no", which the model gave probability <code>1 − score</code>, so loss = <code>−log(1 − score)</code></li>
 </ul>
+<p>You can turn any loss back into a probability with e<sup>−loss</sup>. A loss of 0.693 means the model gave the right answer 50% (a coin flip); a loss of 0.105 means 90%; a loss of 2.3 means only 10%.</p>
+<p>The code never uses the loss <em>value</em> itself to make decisions; it computes it as a report card. But the nudge is tied to it exactly: <code>label − score</code> is the slope of this loss with respect to the dot product, with the sign flipped. So every nudge in <code>train_pair</code> is a small step downhill, in whichever direction makes this loss smaller.</p>
 
 <figure>
 <svg id="lossCurveSvg" viewBox="0 0 720 280" role="img" aria-label="Loss as a function of score for positive and negative pairs"></svg>
@@ -723,7 +867,20 @@ sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span clas
 <figcaption>Fast improvement at first, then slow and steady. The small wiggles come from the random shuffle and random negatives: each epoch sees the data in a different order.</figcaption>
 </figure>
 
-<p>The loss never gets to 0, and it can't. A token like "the" appears next to almost everything, so some "fake" pairs are perfectly plausible, and the model can't score them all perfectly. Loss tells you whether training is working, not how good the embeddings are. For that, look at neighbours, similarities and analogies.</p>
+<h3>What those numbers mean</h3>
+<p>The reported loss adds up about 6 guesses per pair (1 real + 5 negatives). Divide by 6 and convert back with e<sup>−loss</sup>:</p>
+<table>
+<thead><tr><th></th><th class="r">Reported loss</th><th class="r">Per guess (÷ 6)</th><th class="r">Probability given to the right answer</th></tr></thead>
+<tbody>
+<tr><td>Start (epoch 0)</td><td class="r num">4.124</td><td class="r num">0.687</td><td class="r num"><strong>≈ 50%</strong>: coin-flipping</td></tr>
+<tr><td>End (epoch 100)</td><td class="r num">1.322</td><td class="r num">0.220</td><td class="r num"><strong>≈ 80%</strong></td></tr>
+</tbody>
+</table>
+<p>So "the loss fell from 4.12 to 1.32" means: <strong>at the start the model was guessing at random whether a token was a real neighbour; by the end it gave the right answer about 80% probability, on average.</strong> (Strictly, that's a geometric mean over all the guesses.)</p>
+
+<p>The loss never gets to 0, and it can't. A token like "the" appears next to almost everything, so some "fake" pairs are perfectly plausible, and the model can't score them all perfectly.</p>
+
+<div class="callout pos"><p><strong>The twist: getting the guesses right isn't the real goal.</strong> Nobody actually needs a "real neighbour or random token?" detector. It's a <em>proxy task</em>, chosen because the only way to get good at it is to give words with similar neighbours similar vectors. The embeddings are a by-product of learning to guess well. That's why loss tells you whether training is working, but not how good the embeddings are. For that, look at neighbours, similarities and analogies.</p></div>
 
 <!-- ============================================================ -->
 <h2 id="epochs">10. Epochs and the learning rate</h2>
@@ -891,7 +1048,45 @@ sentences_as_indices = [<span class="k">self</span>.vocabulary.encode(<span clas
 <p>With your small corpus some analogies work (king → queen, queen → king, prince → princess, he → she) and some don't (kitten − cat + dog gives tiger instead of puppy). Analogies are a strict test: the answer must be the single closest of 286 tokens, so a small amount of noise can make the wrong one win.</p>
 
 <!-- ============================================================ -->
-<h2 id="glossary">14. Glossary</h2>
+<h2 id="leads">14. Where this leads: from skip-gram to next-token prediction</h2>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L553" target="_blank" rel="noopener"><span class="src-name">the dot-product score</span><span class="src-loc">embed.py line 553</span></a><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/2cd863f84f41d93d39f1e94c3fedf13ad6f100eb/neural-net/src/embed.py#L560-L562" target="_blank" rel="noopener"><span class="src-name">the −log loss</span><span class="src-loc">embed.py lines 560–562</span></a></div>
+
+<p>The yes/no "real neighbour?" game foreshadows next-word prediction, the task behind today's large language models. Historically it went the other way round: skip-gram is a deliberately simplified version of next-word prediction, and the same ideas reappear inside modern models.</p>
+
+<h3>Where skip-gram came from</h3>
+<p>Before word2vec, neural language models (Bengio et al., 2003) <em>did</em> predict the next word: "given the previous few words, which word comes next?" They learned word embeddings along the way. Word2vec (2013) made that much cheaper with two simplifications: predict <em>any</em> nearby word instead of the next one, and replace "which word, out of the whole vocabulary?" with a yes/no question.</p>
+
+<table>
+<thead><tr><th></th><th>Next-word prediction (earlier models, and today's LLMs)</th><th>Skip-gram (your code)</th></tr></thead>
+<tbody>
+<tr><td>Predicts</td><td>the <strong>next</strong> token</td><td><strong>any</strong> neighbour within the window, either side</td></tr>
+<tr><td>Uses order?</td><td>yes: what came before</td><td>no: just "nearby"</td></tr>
+<tr><td>Kind of guess</td><td>multiple choice among the <strong>whole vocabulary</strong></td><td><strong>yes/no</strong>: real neighbour or random token?</td></tr>
+<tr><td>Loss</td><td>−log(probability given to the actual next token)</td><td>−log(probability given to the right yes/no answer)</td></tr>
+</tbody>
+</table>
+
+<h3>Where it leads</h3>
+<figure>
+<svg viewBox="0 0 720 360" role="img" aria-label="Skip-gram compared with a next-token language model"><text x="20" y="24" font-weight="700" font-size="14">Skip-gram (your code)</text><rect x="20" y="40" width="110" height="52" rx="8" class="box"/><text x="75.0" y="62.0" text-anchor="middle" font-size="13" font-weight="600">king</text><text x="75.0" y="79.0" text-anchor="middle" font-size="11.5" class="muted">target token</text><path d="M130 66 L158 66" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="160" y="40" width="130" height="52" rx="8" class="box-accent"/><text x="225.0" y="62.0" text-anchor="middle" font-size="13" font-weight="600">w_in[king]</text><text x="225.0" y="79.0" text-anchor="middle" font-size="11.5" class="muted">embedding</text><path d="M290 66 L318 66" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="320" y="40" width="120" height="52" rx="8" class="box-pos"/><text x="380.0" y="62.0" text-anchor="middle" font-size="13" font-weight="600">· w_out[x]</text><text x="380.0" y="79.0" text-anchor="middle" font-size="11.5" class="muted">dot product</text><path d="M440 66 L468 66" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="470" y="40" width="90" height="52" rx="8" class="box"/><text x="515.0" y="62.0" text-anchor="middle" font-size="13" font-weight="600">sigmoid</text><text x="515.0" y="79.0" text-anchor="middle" font-size="11.5" class="muted">→ 0 to 1</text><path d="M560 66 L588 66" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="590" y="40" width="110" height="52" rx="8" class="box-pos"/><text x="645.0" y="62.0" text-anchor="middle" font-size="13" font-weight="600">yes / no</text><text x="645.0" y="79.0" text-anchor="middle" font-size="11.5" class="muted">real neighbour?</text><text x="20" y="118" font-size="12" class="muted">One token in, one candidate x, one yes/no answer. The embedding goes straight into the dot product.</text><text x="20" y="166" font-weight="700" font-size="14">Next-token language model (e.g. GPT)</text><rect x="20" y="182" width="110" height="60" rx="8" class="box"/><text x="75.0" y="208.0" text-anchor="middle" font-size="13" font-weight="600">the man was</text><text x="75.0" y="225.0" text-anchor="middle" font-size="11.5" class="muted">all tokens so far</text><path d="M130 212 L148 212" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="150" y="182" width="100" height="60" rx="8" class="box-accent"/><text x="200.0" y="208.0" text-anchor="middle" font-size="13" font-weight="600">embeddings</text><text x="200.0" y="225.0" text-anchor="middle" font-size="11.5" class="muted">input table</text><path d="M250 212 L268 212" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="270" y="182" width="130" height="60" rx="8" fill="var(--surface-2)" stroke="var(--violet)" stroke-width="2"/><text x="335" y="208" text-anchor="middle" font-size="13" font-weight="600" fill="var(--violet)">transformer</text><text x="335" y="225" text-anchor="middle" font-size="11.5" class="muted">layers mix in context</text><path d="M400 212 L418 212" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="420" y="182" width="120" height="60" rx="8" class="box-pos"/><text x="480.0" y="208.0" text-anchor="middle" font-size="13" font-weight="600">· every output</text><text x="480.0" y="225.0" text-anchor="middle" font-size="11.5" class="muted">vector (all tokens)</text><path d="M540 212 L558 212" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="560" y="182" width="70" height="60" rx="8" class="box"/><text x="595.0" y="212.0" text-anchor="middle" font-size="13" font-weight="600">softmax</text><path d="M630 212 L648 212" class="stroke-muted" stroke-width="1.5" marker-end="url(#arrM)"/><rect x="650" y="182" width="60" height="60" rx="8" class="box"/><text x="680.0" y="208.0" text-anchor="middle" font-size="13" font-weight="600">next</text><text x="680.0" y="225.0" text-anchor="middle" font-size="11.5" class="muted">token</text><text x="20" y="268" font-size="12" class="muted">Many tokens in, a vote across the whole vocabulary out: "crowned" 31%, "king" 12%, … The vector going into the dot product</text><text x="20" y="284" font-size="12" class="muted">now depends on the whole sentence so far.</text><text x="360" y="330" text-anchor="middle" font-size="13" font-weight="600">Same ingredients: embedding vectors, a dot product with output vectors, and a −log-probability loss.</text></svg>
+<figcaption>The same structure, scaled up. The percentages are illustrative.</figcaption>
+</figure>
+<p>Large language models such as GPT predict the next token, and skip-gram's structure is visible inside them:</p>
+<ul>
+<li><strong>An input embedding table</strong>, like <code>w_in</code>: every token starts as a learned vector.</li>
+<li><strong>An output embedding table</strong>, like <code>w_out</code>: to score each possible next token, the model takes a <strong>dot product</strong> with that token's output vector. That's the same <code>w_in · w_out</code> move as <code>train_pair</code>. (Some models, GPT-2 for example, even reuse the input table as the output table.)</li>
+<li><strong>The same loss idea:</strong> −log of the probability given to the right answer, called cross-entropy. The difference is that the answer is "which of 50,000+ tokens comes next?" rather than yes/no, and a <em>softmax</em> turns the dot products into probabilities that add up to 1.</li>
+</ul>
+
+<h3>The big difference: context</h3>
+<p>In skip-gram, the dot product uses the target's embedding directly, so "bank" has one vector whether it means a river bank or a money bank. In an LLM, the embedding first passes through many <strong>transformer</strong> layers that mix in information from the surrounding words. By the time of the dot product, the vector depends on the whole sentence so far. These are <em>contextual</em> embeddings rather than <em>static</em> ones.</p>
+
+<div class="callout"><p><strong>One reversal.</strong> For skip-gram, the guessing is a proxy and the embeddings are what you keep (section 9). For an LLM, next-token prediction <em>is</em> the product: generating text is just repeated next-token guessing, adding each chosen token to the input and guessing again.</p></div>
+
+<p>So the yes/no "real neighbour?" game is a stripped-down ancestor of next-token prediction. It has the same ingredients (embedding vectors, dot-product scores, a −log-probability loss), just without order, context or a vote across the full vocabulary.</p>
+
+<!-- ============================================================ -->
+<h2 id="glossary">15. Glossary</h2>
 <table>
 <tbody>
 <tr><td><strong>Token</strong></td><td>A piece of text from the BPE tokenizer: a whole word, part of a word, or a single character.</td></tr>
@@ -1220,6 +1415,151 @@ function legend(container, items) {
     try { localStorage.setItem("sg-theme", next); } catch (e) {}
     label();
   });
+})();
+</script>
+<script>
+(function () {
+  const svg = document.getElementById("simSvg");
+  if (!svg) return;
+  const NSx = "http://www.w3.org/2000/svg";
+  const mk = (tag, attrs, parent, text) => { const e = document.createElementNS(NSx, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text !== undefined) e.textContent = text; if (parent) parent.appendChild(e); return e; };
+  const LR = 0.3;
+  const polar = (deg, len) => [len * Math.cos(deg * Math.PI / 180), len * Math.sin(deg * Math.PI / 180)];
+  const START = {
+    king:    { v: polar(205, 1.0), table: "w_in",  color: "var(--accent)", label: "w_in[king]" },
+    queen:   { v: polar(300, 1.0), table: "w_in",  color: "var(--violet)", label: "w_in[queen]" },
+    crowned: { v: polar(70, 1.0),  table: "w_out", color: "var(--pos)",    label: "w_out[crowned]" },
+    pizza:   { v: polar(125, 0.9), table: "w_out", color: "var(--neg)",    label: "w_out[pizza]" },
+  };
+  let V, ghosts, deltas, epochs, timer = null, anim = null;
+  const sig = x => x > 6 ? 1 : x < -6 ? 0 : 1 / (1 + Math.exp(-x));
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
+  const cos = (a, b) => dot(a, b) / (Math.hypot(...a) * Math.hypot(...b));
+
+  function reset() {
+    V = {}; for (const k in START) V[k] = START[k].v.slice();
+    ghosts = {}; deltas = []; epochs = 0;
+    setText("sPair", "–"); setText("sDot", "–"); setText("sScore", "–"); setText("sGrad", "–"); setText("sLoss", "–");
+    document.getElementById("sExplain").textContent = "Press a button to train one pair.";
+    draw(V);
+  }
+  function setText(id, t) { document.getElementById(id).textContent = t; }
+
+  // markers for the four colours
+  function defs() {
+    const d = mk("defs", {}, svg);
+    for (const [id, c] of [["simA", "var(--accent)"], ["simV", "var(--violet)"], ["simP", "var(--pos)"], ["simN", "var(--neg)"], ["simK", "var(--ink)"]]) {
+      const m = mk("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto" }, d);
+      mk("path", { d: "M0,0 L10,5 L0,10 z", fill: c }, m);
+    }
+  }
+  const markerFor = { king: "simA", queen: "simV", crowned: "simP", pizza: "simN" };
+
+  function draw(state) {
+    svg.innerHTML = ""; defs();
+    const cx = 360, cy = 240;
+    const maxLen = Math.max(1.2, ...Object.values(state).map(v => Math.hypot(...v)), ...Object.values(ghosts).map(v => Math.hypot(...v)));
+    const S = Math.min(150, 200 / maxLen);
+    const X = x => cx + x * S, Y = y => cy - y * S;
+    // grid
+    for (let r = 0.5; r <= maxLen * 1.05; r += 0.5) mk("circle", { cx, cy, r: r * S, fill: "none", class: "grid", "stroke-dasharray": r % 1 === 0 ? "" : "2 4" }, svg);
+    mk("line", { x1: 20, x2: 700, y1: cy, y2: cy, class: "grid" }, svg);
+    mk("line", { x1: cx, x2: cx, y1: 10, y2: 460, class: "grid" }, svg);
+    mk("text", { x: 700, y: 462, "text-anchor": "end", "font-size": 11, class: "muted" }, svg, `circles every 0.5 · longest arrow ${maxLen.toFixed(2)}`);
+    // ghosts
+    for (const k in ghosts) {
+      const g = ghosts[k];
+      mk("line", { x1: cx, y1: cy, x2: X(g[0]), y2: Y(g[1]), stroke: START[k].color, "stroke-width": 2, opacity: 0.25, "stroke-dasharray": START[k].table === "w_out" ? "6 4" : "" }, svg);
+    }
+    // vectors
+    for (const k in state) {
+      const v = state[k], st = START[k];
+      mk("line", { x1: cx, y1: cy, x2: X(v[0]), y2: Y(v[1]), stroke: st.color, "stroke-width": st.table === "w_in" ? 4 : 3, "stroke-dasharray": st.table === "w_out" ? "8 5" : "", "marker-end": `url(#${markerFor[k]})` }, svg);
+      const len = Math.hypot(...v) || 1;
+      const lx = X(v[0] + v[0] / len * 0.12), ly = Y(v[1] + v[1] / len * 0.12);
+      mk("text", { x: lx, y: ly + 4, "text-anchor": v[0] >= 0 ? "start" : "end", "font-size": 13, "font-weight": 700, fill: st.color, class: "mono" }, svg, st.label);
+    }
+    // nudge arrows
+    for (const d of deltas) {
+      mk("line", { x1: X(d.from[0]), y1: Y(d.from[1]), x2: X(d.to[0]), y2: Y(d.to[1]), stroke: "var(--ink)", "stroke-width": 2, "marker-end": "url(#simK)" }, svg);
+    }
+    setText("sKQ", cos(state.king, state.queen).toFixed(2));
+    setText("sKP", cos(state.king, state.pizza).toFixed(2));
+    setText("sEpochs", epochs);
+  }
+
+  // exactly train_pair: both updates use the values from before the step
+  function trainPair(tName, oName, label) {
+    const t = V[tName], o = V[oName];
+    const d = dot(t, o), score = sig(d), grad = LR * (label - score);
+    const oldT = t.slice(), oldO = o.slice();
+    const newT = [t[0] + grad * oldO[0], t[1] + grad * oldO[1]];
+    const newO = [o[0] + grad * oldT[0], o[1] + grad * oldT[1]];
+    const loss = label === 1 ? -Math.log(score + 1e-10) : -Math.log(1 - score + 1e-10);
+    return { tName, oName, label, d, score, grad, loss, oldT, oldO, newT, newO };
+  }
+
+  function show(r) {
+    setText("sPair", `${r.tName}, ${r.oName} · ${r.label}`);
+    setText("sDot", r.d.toFixed(3));
+    setText("sScore", r.score.toFixed(3));
+    setText("sGrad", (r.grad >= 0 ? "+" : "") + r.grad.toFixed(3));
+    setText("sLoss", r.loss.toFixed(3));
+    const ex = document.getElementById("sExplain");
+    if (r.label === 1) {
+      ex.innerHTML = `<b style="color:var(--pos)">Real pair.</b> The score was ${r.score.toFixed(2)}, but should be 1, so grad is positive (${r.grad.toFixed(3)}). <code>w_in[${r.tName}]</code> moves <em>towards</em> <code>w_out[${r.oName}]</code> (its nudge points along it), and <code>w_out[${r.oName}]</code> moves towards <code>w_in[${r.tName}]</code>. The angle between them shrinks.`;
+    } else {
+      ex.innerHTML = `<b style="color:var(--neg)">Negative sample.</b> The score was ${r.score.toFixed(2)}, but should be 0, so grad is negative (${r.grad.toFixed(3)}). <code>w_in[${r.tName}]</code> moves directly <em>away</em> from <code>w_out[${r.oName}]</code>, and vice versa. The angle between them grows.`;
+    }
+  }
+
+  function animate(r, done) {
+    if (anim) cancelAnimationFrame(anim);
+    ghosts = { [r.tName]: r.oldT, [r.oName]: r.oldO };
+    const t0 = performance.now(), dur = 380;
+    function frame(now) {
+      const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      const state = Object.assign({}, V);
+      state[r.tName] = [r.oldT[0] + (r.newT[0] - r.oldT[0]) * e, r.oldT[1] + (r.newT[1] - r.oldT[1]) * e];
+      state[r.oName] = [r.oldO[0] + (r.newO[0] - r.oldO[0]) * e, r.oldO[1] + (r.newO[1] - r.oldO[1]) * e];
+      deltas = [{ from: r.oldT, to: state[r.tName] }, { from: r.oldO, to: state[r.oName] }];
+      draw(state);
+      if (k < 1) anim = requestAnimationFrame(frame);
+      else { V[r.tName] = r.newT; V[r.oName] = r.newO; anim = null; if (done) done(); }
+    }
+    anim = requestAnimationFrame(frame);
+  }
+
+  function step(tName, oName, label, done) { const r = trainPair(tName, oName, label); show(r); animate(r, done); }
+
+  const EPOCH = [["king", "crowned", 1], ["king", "pizza", 0], ["queen", "crowned", 1], ["queen", "pizza", 0]];
+  function runEpoch(done) {
+    let i = 0;
+    const next = () => { if (i < EPOCH.length) { const [t, o, l] = EPOCH[i++]; step(t, o, l, next); } else { epochs++; draw(V); if (done) done(); } };
+    next();
+  }
+
+  document.querySelectorAll("[data-step]").forEach(b => b.addEventListener("click", () => {
+    stop(); const [t, o, l] = b.dataset.step.split(","); step(t, o, +l);
+  }));
+  document.getElementById("simEpoch").addEventListener("click", () => { stop(); runEpoch(); });
+  document.getElementById("simReset").addEventListener("click", () => { stop(); reset(); });
+  const playBtn = document.getElementById("simPlay");
+  function stop() { if (timer) { timer = null; playBtn.textContent = "▶ Play epochs"; } }
+  playBtn.addEventListener("click", () => {
+    if (timer) { stop(); return; }
+    timer = true; playBtn.textContent = "❚❚ Pause";
+    const loop = () => { if (!timer) return; if (epochs >= 40) { stop(); return; } runEpoch(() => { if (timer) setTimeout(loop, 120); }); };
+    loop();
+  });
+
+  document.getElementById("simLegend2").innerHTML =
+    '<span><i style="background:var(--accent)"></i>w_in[king] (target)</span>' +
+    '<span><i style="background:var(--violet)"></i>w_in[queen] (target)</span>' +
+    '<span><i style="background:var(--pos)"></i>w_out[crowned] (real context, dashed)</span>' +
+    '<span><i style="background:var(--neg)"></i>w_out[pizza] (negative sample, dashed)</span>' +
+    '<span><i style="background:var(--ink)"></i>the nudge</span>';
+  reset();
 })();
 </script>
 </body>
