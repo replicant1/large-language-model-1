@@ -203,6 +203,7 @@ svg .dot-q { fill: var(--c-q); } svg .dot-k { fill: var(--c-k); }
 <li><a href="#mix">Step 6: Mixing the values</a></li>
 <li><a href="#whole">The whole head as one network</a></li>
 <li><a href="#training">Training: which synapses learn</a></li>
+<li><a href="#meaning">Why should any of this mean anything?</a></li>
 <li><a href="#real">How real code does it</a></li>
 <li><a href="#summary">Summary: maths to neurons</a></li>
 </ol>
@@ -760,7 +761,7 @@ svg .dot-q { fill: var(--c-q); } svg .dot-k { fill: var(--c-k); }
 <p>The square trick is used here because it needs nothing but weighted sums and a one-input activation function, which is exactly what your <code>Neuron</code> class provides. Other designs reach the same product differently:</p>
 <ul>
 <li><strong>Product neurons</strong> (also called "sigma-pi" units) multiply their inputs instead of adding them. This means adding a new kind of neuron.</li>
-<li><strong>Gated synapses</strong> have a weight that is <em>set by another neuron's value</em> while the network runs. The product <code>q[c] × k[c]</code> becomes "q[c] passing through a synapse whose weight is k[c] right now". This is how matrix code effectively treats K, and <a href="#real">section 12</a> comes back to it.</li>
+<li><strong>Gated synapses</strong> have a weight that is <em>set by another neuron's value</em> while the network runs. The product <code>q[c] × k[c]</code> becomes "q[c] passing through a synapse whose weight is k[c] right now". This is how matrix code effectively treats K, and <a href="#real">section 13</a> comes back to it.</li>
 <li><strong>Log domain</strong>: for positive numbers, a × b = exp(log a + log b). This is two log neurons and an exp neuron. It fails for zero and for negative values, which queries and keys often have.</li>
 </ul>
 <p>All of these give the same number. The neuron count changes, but the attention mechanism doesn't.</p>
@@ -1121,7 +1122,50 @@ svg .dot-q { fill: var(--c-q); } svg .dot-k { fill: var(--c-k); }
 <p>What does training teach the head? W_Q and W_K learn which tokens should find each other. In the example, the query of "sat" lines up best with the key of "cat". W_V learns what information to pass along once a token has been found.</p>
 
 <!-- ============================================================ -->
-<h2 id="real">12. How real code does it</h2>
+<h2 id="meaning">12. Why should any of this mean anything?</h2>
+
+<p>It's fair to ask why a chain of matrix products, dot products and softmaxes should produce numbers that mean anything. The basic answer: <strong>nobody expects the operations themselves to produce meaningful numbers.</strong> With random weights they don't: the output is noise. The meaning comes from <strong>training</strong>, which adjusts the weights until the numbers <em>are</em> useful. The operations only decide what kinds of things the weights <em>could</em> learn. The belief rests on three ideas, and your skip-gram code already shows all three at work.</p>
+
+<h3>1. Prediction forces structure</h3>
+<p>The model is trained on one task: predict the next token, over and over, across billions of examples. Its score is the loss, and you can measure the difference between random and meaningful directly:</p>
+<ul>
+<li>A GPT-2-sized model with random weights is about as good as guessing uniformly among its 50,257 tokens. Its loss is about ln(50257) ≈ 10.8.</li>
+<li>After training, its loss is about 3. That is the same as narrowing each guess from about 50,000 candidates to about 20.</li>
+</ul>
+<p>Numbers that predict real text that much better than chance can't be random. And the cheapest way to predict text well is to track the real structure of language: grammar, who "she" refers to, which meaning of "bank" is in play, facts.</p>
+
+<h3>2. Gradient descent rewards what is consistent, and noise averages out</h3>
+<p>Take one example. The model is processing "The keys to the cabinet" and must predict "are" or "is".</p>
+<ul>
+<li>If the current position happened to attend a bit more to "keys" than to "cabinet", it would pick up "plural", and "are" would get a better score.</li>
+<li>Backpropagation works out, for every weight in W_Q and W_K, which direction of nudge would have raised that useful score q · k_keys.</li>
+<li>The weights move a tiny step that way.</li>
+</ul>
+<p>One example on its own proves nothing: some of that nudge is real signal and some is quirk. But the "attend to the subject when you need agreement" nudge points the same way across millions of sentences, while the quirks point in random directions and cancel. Over training, only the patterns that consistently help prediction build up. "Random" is the starting point that training gradually sands away.</p>
+
+<h3>3. The architecture is a well-chosen set of knobs</h3>
+<p>Gradient descent can only find what the design makes possible. Each step of attention is there to make "pull in information from the relevant other tokens" easy to learn:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Step</th><th>Why it's there</th></tr></thead>
+<tbody>
+<tr><td>Dot product q · k</td><td>A standard measure of how well two vectors match, the same as your skip-gram score</td></tr>
+<tr><td>Separate W_Q and W_K</td><td>So "what I'm looking for" and "what I offer" can differ, and relevance can be one-directional</td></tr>
+<tr><td>Softmax</td><td>A <em>soft</em>, adjustable selection: a lookup ("find the matching entry") made smooth, so gradients can flow through it</td></tr>
+<tr><td>Separate W_V</td><td>So <em>what is found</em> and <em>what is passed on</em> can be learned separately</td></tr>
+<tr><td>Weighted sum</td><td>Copies information from the selected tokens into this one</td></tr>
+</tbody></table></div>
+<p>The design is a bet that routing information between tokens based on their content is a useful building block for language. The bet has a history:</p>
+<ul>
+<li>Attention was first added to translation models (around 2014) so that, while writing each output word, the model could look back at the relevant input word. With no extra help, it learned word alignments that matched human ones closely.</li>
+<li>The Transformer (2017) bet that attention alone, stacked many layers deep, was enough. It beat the alternatives, and it kept improving as models got bigger.</li>
+</ul>
+
+<div class="callout"><p><strong>Honestly, it's empirical.</strong> No theorem says this design <em>must</em> learn grammar or meaning. What exists is a general result that big enough networks can represent almost any function, the practical fact that gradient descent finds good settings far more reliably than anyone expected, and a very large body of experimental results. Interpretability research then finds the structure afterwards, as in the <a href="#relations">"kinds of relationship" table</a>. The model was never told to build subject–verb heads; they appeared because they help prediction.</p></div>
+
+<p><strong>You've already watched this happen.</strong> Your skip-gram network starts with random vectors. Nothing in a dot product or a sigmoid says "king" should end up near "queen". The guess-the-neighbour game, repeated thousands of times, pushes them together because that is what lowers the loss. Attention is the same principle with more flexible machinery: random weights + an architecture that can express useful operations + a prediction task + many gradient steps = weights that reflect the structure of the data.</p>
+
+<!-- ============================================================ -->
+<h2 id="real">13. How real code does it</h2>
 
 <p>Nobody builds attention out of <code>Neuron</code> objects in practice. Real code writes it as a few matrix operations, roughly <code>softmax(Q @ K.T / sqrt(d_k) + mask) @ V</code>, and a GPU runs thousands of multiply-adds at once. That is the same arithmetic as the network above, packed differently:</p>
 <ul>
@@ -1134,7 +1178,7 @@ svg .dot-q { fill: var(--c-q); } svg .dot-k { fill: var(--c-k); }
 <div class="callout"><p><strong>Another way to see Step 4.</strong> Look at the score neuron again, using the "gated synapse" idea from Step 2. For a given sentence, <code>k_cat</code> acts like a set of <em>synapse weights</em> that <code>q_sat</code> passes through. Skip-gram's output neuron does exactly this with <code>context_vector</code>. The difference is that in skip-gram those weights are learned once and stored, while in attention they are <em>recomputed for every sentence</em> from the tokens themselves. That is why attention is often described as a layer whose weights depend on the input.</p></div>
 
 <!-- ============================================================ -->
-<h2 id="summary">13. Summary: maths to neurons</h2>
+<h2 id="summary">14. Summary: maths to neurons</h2>
 
 <div class="table-wrap"><table>
 <thead><tr><th>In the formula</th><th>As neurons and synapses</th><th>Trained?</th></tr></thead>
