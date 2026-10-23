@@ -219,6 +219,46 @@ svg .dot-q { fill: var(--c-q); } svg .dot-k { fill: var(--c-k); }
 <li><strong class="c-v">Value v</strong>: "what I pass on if I am picked."</li>
 </ul>
 
+<h3 id="plain">Query and key in plain terms</h3>
+<p>Think of each token as a person at a meeting, where everyone may ask everyone else for help. A token's <strong class="c-q">query</strong> is the question it holds up to the room, such as "I'm a verb. Who did me?" A token's <strong class="c-k">key</strong> is a label on its chest saying what it can help with, such as "I'm a noun, and I could be the one doing something." Each token compares its query with every other token's key, and the better the match, the more attention it pays. A library works the same way: the query is what you type into the catalogue search, the keys are the subject labels on the books, and the values are the contents of the books you take home.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Sentence</th><th class="c-q">Query (who is asking, and what)</th><th class="c-k">Best-matching key</th></tr></thead>
+<tbody>
+<tr><td>The cat <b>sat</b> on the mat.</td><td><b>sat</b>: "Who is doing the sitting?"</td><td><b>cat</b>: "I'm a thing that can do things (an animal, a subject)."</td></tr>
+<tr><td>The keys to the cabinet <b>are</b> on the table.</td><td><b>are</b>: "Which noun am I agreeing with? Singular or plural?"</td><td><b>keys</b>: "I'm a plural noun, the subject." It beats <b>cabinet</b> ("I'm a singular noun, inside a phrase"), so the model picks "are", not "is".</td></tr>
+<tr><td>Sarah lost her phone, so <b>she</b> bought a new <b>one</b>.</td><td><b>she</b>: "Which person am I referring to?"<br><b>one</b>: "What thing am I standing in for?"</td><td><b>Sarah</b>: "I'm a named person."<br><b>phone</b>: "I'm an object that was just mentioned."</td></tr>
+<tr><td>He sat on the river <b>bank</b>.</td><td><b>bank</b>: "Is anything nearby telling me which meaning I have?"</td><td><b>river</b>: "I'm about water and landscape." This shifts "bank" toward the riverside meaning.</td></tr>
+<tr><td>I'm not <b>happy</b>.</td><td><b>happy</b>: "Is anything flipping my meaning?"</td><td><b>not</b>: "I'm a negation."</td></tr>
+</tbody></table></div>
+
+<div class="callout"><p><strong>Two caveats.</strong> These are human-readable stand-ins. In a real model, queries and keys are just lists of numbers, and nobody writes "who is doing the sitting?" anywhere. Training finds whatever questions and labels help predict the next token, and many of them don't map neatly to grammar terms. Also, a model has many heads, and each asks its own kind of question: one might track subjects and verbs, another pronouns, another the previous word. The worked example on this page, where "sat" pays most of its attention to "cat", is the first row of the table, with made-up numbers.</p></div>
+
+
+<h3 id="relations">What kinds of relationship?</h3>
+<p>For each pair of tokens, a head's query and key give <strong>one number: how relevant token j is to token i</strong>. The <em>kind</em> of relationship isn't written anywhere. It's implied by which head you are looking at, because each head learns its own W_Q and W_K. Three points sharpen this:</p>
+<ul>
+<li><strong>It's one-directional.</strong> "sat" looking at "cat" (q_sat · k_cat) is a different number from "cat" looking at "sat" (q_cat · k_sat), because queries and keys come from different weights.</li>
+<li><strong>Q and K only decide <em>where</em> to look.</strong> <em>What</em> gets passed along is decided by V (and W_O). A head can learn "find the subject" with Q and K, and "copy its number and gender" with V.</li>
+<li><strong>Nobody chooses the relationships.</strong> Training keeps whatever helps predict the next token. The categories below come from researchers studying trained models afterwards.</li>
+</ul>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Kind</th><th>What the head does</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td><b>Positional</b></td><td>Looks at the previous token, the start of the sentence, or (in models without a causal mask, such as BERT) the next token, whatever the words are</td><td>Every token attends to the one before it</td></tr>
+<tr><td><b>Grammatical (syntax)</b></td><td>Links words connected by grammar</td><td>Verb → its subject, verb → its object, "the" → its noun, preposition → its object</td></tr>
+<tr><td><b>Agreement</b></td><td>Finds the word that controls a grammatical form</td><td>"are" → "keys" (plural), not "cabinet"</td></tr>
+<tr><td><b>Coreference</b></td><td>Links a pronoun or stand-in to what it refers to</td><td>"she" → "Sarah", "one" → "phone"</td></tr>
+<tr><td><b>Semantic / topical</b></td><td>Links words related in meaning or topic</td><td>"bank" → "river", "doctor" → "hospital"</td></tr>
+<tr><td><b>Copying and pattern completion</b></td><td>"Induction heads": if A was followed by B earlier, and A appears again, look at what followed A last time</td><td>"Mr Dursley … Mr" → attends to "Dursley" to predict it again</td></tr>
+<tr><td><b>Task-specific</b></td><td>Heads that do one narrow job inside a bigger circuit</td><td>In "When Mary and John went to the store, John gave a drink to", heads that find "Mary" as the answer</td></tr>
+<tr><td><b>"Nowhere in particular"</b></td><td>Puts its attention on the first token or on punctuation, which in practice means "nothing useful here, do nothing"</td><td>Many heads, much of the time</td></tr>
+</tbody></table></div>
+
+<p class="muted" style="font-size:0.92rem">Not every head is this tidy. Many mix several patterns, or do things nobody has named. As a rough tendency, lower layers have more positional and grammatical heads, and higher layers more semantic and task-specific ones. No single head explains much on its own: meaning comes from many heads across many layers working together, plus the MLP layers between them.</p>
+
+<h3 id="formula">The whole head in one formula</h3>
 <p>The head compares a token's query with every token's key to get a <strong>score</strong> for each pair. It turns each token's scores into <strong>weights</strong> that add up to 1, using softmax. Then it hands each token the weighted mix of all the values. Written with matrices, the whole thing is one line:</p>
 
 <div class="formula">Attention(Q, K, V) = softmax( Q · K<sup>T</sup> / √d<sub>k</sub> ) · V</div>
