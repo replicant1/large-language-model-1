@@ -74,6 +74,13 @@ svg .link { stroke: var(--muted); stroke-width: 1.3; stroke-dasharray: 3 4; fill
 <tr><td>Vector for "bank"</td><td>One fixed vector, whatever the sentence</td><td>One fixed vector at the bottom, then made contextual by the attention layers</td></tr>
 </tbody></table></div>
 
+<p><strong>What "real neighbour" means.</strong> "Real" means the two tokens actually appeared near each other in the training text, as opposed to a pairing made up at random. The skip-gram trainer builds two kinds of training pairs:</p>
+<ul>
+<li><strong>Real (positive) pairs, label 1.</strong> It slides a window over the corpus, and every token within ±2 places of the target is paired with it. In "the king sits on the throne", (king, sits) is a real pair because "sits" really is a neighbour of "king" in that sentence. (<a href="how-train-skip-gram-works.html#pairs">Step 2 of the skip-gram guide</a>)</li>
+<li><strong>Fake (negative) pairs, label 0.</strong> For each real pair it also draws 5 random tokens from the vocabulary, such as (king, pizza). These are "negative samples". They are almost certainly not real neighbours; they are just random pairings. (<a href="how-train-skip-gram-works.html#negatives">Step 5 of the skip-gram guide</a>)</li>
+</ul>
+<p>The network's sigmoid output is its guess at whether a pair is real or fake, and training pushes it towards 1 for real pairs and 0 for fakes.</p>
+
 <h2>The clarification: which part is analogous</h2>
 
 <p>The analogy covers the <em>ends</em> of a Transformer, not the whole thing. The full skip-gram network is like a Transformer with its middle removed:</p>
