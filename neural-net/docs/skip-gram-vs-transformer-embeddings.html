@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skip-gram and Transformer Embeddings</title>
+<meta name="description" content="A short note on how skip-gram relates to a Transformer: its embedding table is the same mechanism as a Transformer's, but the whole skip-gram network is a Transformer with the attention layers taken out.">
+<style>
+:root {
+  --bg: #fbfaf7; --surface: #ffffff; --surface-2: #f3f1ec; --ink: #1d1f23; --muted: #5d6470; --line: #e3e0d8;
+  --accent: #2f5fd0; --accent-soft: #e6ecfb; --pos: #1f8a5b; --pos-soft: #e2f3ea; --neg: #c8462c; --neg-soft: #fbe8e3;
+  --violet: #7a4fc4; --violet-soft: #efe8fa; --code-bg: #f3f1ec;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171b; --surface: #1d2026; --surface-2: #252930; --ink: #e8e6e1; --muted: #a0a6b0; --line: #343840;
+    --accent: #7fa2ff; --accent-soft: #232c45; --pos: #4cc38a; --pos-soft: #1b3229; --neg: #ff7a5c; --neg-soft: #3a231d;
+    --violet: #b392f0; --violet-soft: #2c2540; --code-bg: #252930;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171b; --surface: #1d2026; --surface-2: #252930; --ink: #e8e6e1; --muted: #a0a6b0; --line: #343840;
+  --accent: #7fa2ff; --accent-soft: #232c45; --pos: #4cc38a; --pos-soft: #1b3229; --neg: #ff7a5c; --neg-soft: #3a231d;
+  --violet: #b392f0; --violet-soft: #2c2540; --code-bg: #252930;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.65 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+main { max-width: 800px; margin: 0 auto; padding: 40px 16px 96px; }
+h1 { font-size: 2.1rem; line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.02em; }
+h2 { font-size: 1.45rem; line-height: 1.3; margin: 48px 0 12px; letter-spacing: -0.01em; padding-top: 16px; border-top: 1px solid var(--line); }
+p, li { max-width: 68ch; }
+a { color: var(--accent); }
+.lede { font-size: 1.12rem; color: var(--muted); margin: 0 0 24px; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.86em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+figure { margin: 24px 0; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+figure svg { display: block; width: 100%; height: auto; }
+figcaption { font-size: 0.9rem; color: var(--muted); margin-top: 10px; }
+.fig-label { font-weight: 700; color: var(--ink); margin-right: 2px; }
+.callout { border-left: 4px solid var(--violet); background: var(--violet-soft); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 20px 0; }
+.callout p { margin: 6px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; margin: 12px 0; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.table-wrap { overflow-x: auto; }
+.theme-toggle { position: fixed; top: 12px; right: 12px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 0.85rem; cursor: pointer; }
+svg text { fill: var(--ink); font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
+svg .muted { fill: var(--muted); }
+svg .box { fill: var(--surface-2); stroke: var(--line); stroke-width: 1.5; }
+svg .box-emb { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; }
+svg .box-out { fill: var(--pos-soft); stroke: var(--pos); stroke-width: 2; }
+svg .box-mid { fill: var(--violet-soft); stroke: var(--violet); stroke-width: 2; }
+svg .box-gap { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 6 5; opacity: 0.7; }
+svg .arrow { stroke: var(--muted); stroke-width: 1.6; fill: none; }
+svg .link { stroke: var(--muted); stroke-width: 1.3; stroke-dasharray: 3 4; fill: none; }
+</style>
+</head>
+<body>
+<button class="theme-toggle" id="themeToggle" type="button">Theme</button>
+<main>
+
+<h1>Skip-gram and Transformer embeddings</h1>
+<p class="lede">A short note connecting the two guides: <a href="how-train-skip-gram-works.html">How <code>train_skip_gram</code> works</a> and <a href="how-attention-head-works.html">How one attention head works</a>.</p>
+
+<h2>The analogy</h2>
+
+<p>A Transformer does not use skip-gram embeddings. It starts its own embedding table from random numbers and trains it along with the rest of the model. But <strong>skip-gram's embedding table and a Transformer's embedding table are the same mechanism</strong>: a learned table with one vector per token, picked out by a one-hot input, and trained by nudging weights to reduce a loss. Only the training signal is different.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th></th><th>Skip-gram</th><th>Transformer</th></tr></thead>
+<tbody>
+<tr><td>The table</td><td><code>embedding</code>: the input → hidden synapses</td><td>The token embedding table, plus a position table</td></tr>
+<tr><td>Trained by</td><td>"Is this token a real neighbour?"</td><td>"What is the next token?", with the error passed back through every layer above</td></tr>
+<tr><td>Vector for "bank"</td><td>One fixed vector, whatever the sentence</td><td>One fixed vector at the bottom, then made contextual by the attention layers</td></tr>
+</tbody></table></div>
+
+<h2>The clarification: which part is analogous</h2>
+
+<p>The analogy covers the <em>ends</em> of a Transformer, not the whole thing. The full skip-gram network is like a Transformer with its middle removed:</p>
+
+<figure>
+<svg viewBox="0 0 720 300" role="img" aria-label="Skip-gram and a GPT-style Transformer side by side. Both have an embedding table and an output table. Only the Transformer has attention and MLP blocks in between.">
+<defs><marker id="mk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker></defs>
+<text x="10" y="26" font-size="14" font-weight="700">Skip-gram</text>
+<rect x="10" y="40" width="100" height="56" rx="8" class="box"/>
+<text x="60" y="73" font-size="12.5" text-anchor="middle">one-hot token</text>
+<rect x="140" y="40" width="120" height="56" rx="8" class="box-emb"/>
+<text x="200" y="64" font-size="12.5" font-weight="600" text-anchor="middle">embedding table</text>
+<text x="200" y="82" font-size="11" text-anchor="middle" class="muted">input → hidden</text>
+<rect x="290" y="40" width="200" height="56" rx="8" class="box-gap"/>
+<text x="390" y="60" font-size="11.5" text-anchor="middle" class="muted">nothing here: the embedding</text>
+<text x="390" y="88" font-size="11.5" text-anchor="middle" class="muted">goes straight to the dot product</text>
+<rect x="520" y="40" width="90" height="56" rx="8" class="box-out"/>
+<text x="565" y="64" font-size="12.5" font-weight="600" text-anchor="middle">· output</text>
+<text x="565" y="82" font-size="11" text-anchor="middle" class="muted">context_vector</text>
+<rect x="630" y="40" width="80" height="56" rx="8" class="box"/>
+<text x="670" y="64" font-size="12" text-anchor="middle">real</text>
+<text x="670" y="81" font-size="12" text-anchor="middle">neighbour?</text>
+<path d="M110 68 L137 68" class="arrow" marker-end="url(#mk)"/>
+<path d="M260 68 L517 68" class="arrow" marker-end="url(#mk)"/>
+<path d="M610 68 L627 68" class="arrow" marker-end="url(#mk)"/>
+
+<path d="M248 100 L248 183" class="link"/>
+<path d="M565 100 L565 183" class="link"/>
+<text x="256" y="142" font-size="11.5" class="muted">same mechanism</text>
+<text x="557" y="142" font-size="11.5" text-anchor="end" class="muted">same mechanism</text>
+
+<text x="10" y="172" font-size="14" font-weight="700">Transformer (GPT-style)</text>
+<rect x="10" y="186" width="100" height="56" rx="8" class="box"/>
+<text x="60" y="210" font-size="12.5" text-anchor="middle">one-hot token</text>
+<text x="60" y="228" font-size="11" text-anchor="middle" class="muted">+ position</text>
+<rect x="140" y="186" width="120" height="56" rx="8" class="box-emb"/>
+<text x="200" y="210" font-size="12.5" font-weight="600" text-anchor="middle">embedding table</text>
+<text x="200" y="228" font-size="11" text-anchor="middle" class="muted">+ position table</text>
+<rect x="290" y="186" width="200" height="56" rx="8" class="box-mid"/>
+<text x="390" y="210" font-size="12.5" font-weight="600" text-anchor="middle">attention + MLP blocks × N</text>
+<text x="390" y="228" font-size="11" text-anchor="middle" class="muted">make each vector contextual</text>
+<rect x="520" y="186" width="90" height="56" rx="8" class="box-out"/>
+<text x="565" y="210" font-size="12.5" font-weight="600" text-anchor="middle">· output</text>
+<text x="565" y="228" font-size="11" text-anchor="middle" class="muted">table</text>
+<rect x="630" y="186" width="80" height="56" rx="8" class="box"/>
+<text x="670" y="210" font-size="12" text-anchor="middle">softmax →</text>
+<text x="670" y="227" font-size="12" text-anchor="middle">next token</text>
+<path d="M110 214 L137 214" class="arrow" marker-end="url(#mk)"/>
+<path d="M260 214 L287 214" class="arrow" marker-end="url(#mk)"/>
+<path d="M490 214 L517 214" class="arrow" marker-end="url(#mk)"/>
+<path d="M610 214 L627 214" class="arrow" marker-end="url(#mk)"/>
+<text x="390" y="268" font-size="11.5" text-anchor="middle" class="muted">the part the attention guide explains,</text>
+<text x="390" y="284" font-size="11.5" text-anchor="middle" class="muted">and the part skip-gram has no counterpart for</text>
+</svg>
+<figcaption><span class="fig-label">Fig. 1.</span> Both networks start with an embedding table and end with a dot product against an output table. Only the Transformer has the attention + MLP blocks in between. In skip-gram, the embedding goes straight into the dot product.</figcaption>
+</figure>
+
+<div class="callout"><p><strong>In one sentence:</strong> skip-gram is a good model of a Transformer's first step (the input embedding table) and its last step (scoring with an output table). It has nothing that corresponds to the attention layers in between.</p></div>
+
+<h2>Why the middle matters</h2>
+<ul>
+<li><strong>Static vs. contextual.</strong> Skip-gram gives "bank" one vector, whether it means a river bank or a money bank. A Transformer starts from one vector too, but every attention layer mixes in information from the surrounding tokens. By the time the vector reaches the output table, it describes "bank" <em>in this sentence</em>.</li>
+<li><strong>One token vs. the whole sentence.</strong> Skip-gram's score depends on one input token. A Transformer's prediction depends on every token so far, because attention lets each token gather information from the others.</li>
+<li><strong>The output table.</strong> Skip-gram's <code>context_vector</code> table and a Transformer's output table do the same job: one vector per token, dotted with the current vector to give a score. GPT-2 goes further and reuses its input embedding table as its output table.</li>
+</ul>
+
+<p>For the full mechanics: the embedding table and its training are in the <a href="how-train-skip-gram-works.html">skip-gram guide</a>. The middle, built neuron by neuron, is in the <a href="how-attention-head-works.html">attention guide</a>, and its section 2, <a href="how-attention-head-works.html#input">Where x comes from</a>, shows the Transformer's embedding table as neurons and synapses.</p>
+
+</main>
+<script>
+(function () {
+  const btn = document.getElementById("themeToggle");
+  const root = document.documentElement;
+  let saved = null;
+  try { saved = localStorage.getItem("sg-theme"); } catch (e) {}
+  if (saved) root.setAttribute("data-theme", saved);
+  const isDark = () => root.getAttribute("data-theme") ? root.getAttribute("data-theme") === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  const label = () => { btn.textContent = isDark() ? "☀ Light" : "☾ Dark"; };
+  label();
+  btn.addEventListener("click", () => {
+    const next = isDark() ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("sg-theme", next); } catch (e) {}
+    label();
+  });
+})();
+</script>
+</body>
+</html>
