@@ -203,6 +203,7 @@ svg .dot-q { fill: var(--c-q); } svg .dot-k { fill: var(--c-k); }
 <li><a href="#mix">Step 6: Mixing the values</a></li>
 <li><a href="#whole">The whole head as one network</a></li>
 <li><a href="#training">Training: which synapses learn</a></li>
+<li><a href="#nudge">How gradient descent knows what to nudge</a></li>
 <li><a href="#meaning">Why should any of this mean anything?</a></li>
 <li><a href="#real">How real code does it</a></li>
 <li><a href="#summary">Summary: maths to neurons</a></li>
@@ -761,7 +762,7 @@ svg .dot-q { fill: var(--c-q); } svg .dot-k { fill: var(--c-k); }
 <p>The square trick is used here because it needs nothing but weighted sums and a one-input activation function, which is exactly what your <code>Neuron</code> class provides. Other designs reach the same product differently:</p>
 <ul>
 <li><strong>Product neurons</strong> (also called "sigma-pi" units) multiply their inputs instead of adding them. This means adding a new kind of neuron.</li>
-<li><strong>Gated synapses</strong> have a weight that is <em>set by another neuron's value</em> while the network runs. The product <code>q[c] × k[c]</code> becomes "q[c] passing through a synapse whose weight is k[c] right now". This is how matrix code effectively treats K, and <a href="#real">section 13</a> comes back to it.</li>
+<li><strong>Gated synapses</strong> have a weight that is <em>set by another neuron's value</em> while the network runs. The product <code>q[c] × k[c]</code> becomes "q[c] passing through a synapse whose weight is k[c] right now". This is how matrix code effectively treats K, and <a href="#real">section 14</a> comes back to it.</li>
 <li><strong>Log domain</strong>: for positive numbers, a × b = exp(log a + log b). This is two log neurons and an exp neuron. It fails for zero and for negative values, which queries and keys often have.</li>
 </ul>
 <p>All of these give the same number. The neuron count changes, but the attention mechanism doesn't.</p>
@@ -1122,7 +1123,52 @@ svg .dot-q { fill: var(--c-q); } svg .dot-k { fill: var(--c-k); }
 <p>What does training teach the head? W_Q and W_K learn which tokens should find each other. In the example, the query of "sat" lines up best with the key of "cat". W_V learns what information to pass along once a token has been found.</p>
 
 <!-- ============================================================ -->
-<h2 id="meaning">12. Why should any of this mean anything?</h2>
+<h2 id="nudge">12. How gradient descent knows what to nudge</h2>
+<div class="where"><span class="where-label">Compare</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/c1f0f57/neural-net/src/skip_gram_network.py#L124-L137" target="_blank" rel="noopener"><span class="src-name">SkipGramNetwork.train_pair</span><span class="src-loc">skip_gram_network.py lines 124–137</span></a></div>
+
+<p>A network has many weights, and none of them is labelled with what it means. So how does training know which ones to change, and by how much? It doesn't need to know what any weight means. For each weight it only needs one number: <strong>"if this weight were slightly bigger, would the loss go up or down, and how fast?"</strong> That number is the weight's <strong>gradient</strong>. It can be worked out mechanically, by a fixed rule, without any idea of what the weight is for.</p>
+
+<h3>Every synapse can work out its own blame</h3>
+<p>Write a neuron's <strong>error</strong> for how much higher its value should have been to lower the loss (negative if it should have been lower). Then the update for one synapse needs just two numbers:</p>
+<div class="formula" style="white-space:normal">nudge = learning rate × (error at the neuron it feeds into) × (value of the neuron it comes from)</div>
+<ul>
+<li><strong>The value of the neuron it comes from</strong> was recorded during the forward pass. If that input was 0, the synapse made no difference to this example, so it gets no nudge. If the input was large, the synapse had a large effect, so it gets a large nudge.</li>
+<li><strong>The error at the neuron it feeds into</strong> says whether that neuron's value should have been higher or lower, and by how much.</li>
+</ul>
+<p>Your skip-gram <code>train_pair</code> already does exactly this:</p>
+<pre>grad = lr * (label - score)                     <span class="c"># lr × output error</span>
+...
+synapse_in.weight += grad * synapse_out.weight  <span class="c"># error passed back × input (1)</span>
+synapse_out.weight += grad * hidden_value       <span class="c"># × value it comes from</span></pre>
+<p>Nothing in that code knows that one weight is "the king vector, dimension 7". Each synapse just does arithmetic on the numbers at its two ends.</p>
+
+<h3>Where each neuron's error comes from: backpropagation</h3>
+<p>Only the output neurons get their error directly, by comparing the prediction with the right answer. For a language model this is "predicted 20% for 'are', but the answer was 'are', so push it up; predicted 30% for 'is', push it down." Every other neuron gets its error by <strong>passing it backwards along the same synapses</strong>:</p>
+<div class="formula" style="white-space:normal">error at a neuron = (Σ over its outgoing synapses of weight × error at the far end) × slope of its activation</div>
+<p>This is the chain rule from calculus, applied one neuron at a time. A neuron that strongly fed a wrong output inherits a lot of blame. A neuron connected only through tiny weights inherits very little. The slopes are the ones from <a href="#training">section 11</a>: 1 for identity, 2x for square, the neuron's own value for exp, and 1/x for log. So the procedure is:</p>
+<ol>
+<li>Run forward and record every neuron's value.</li>
+<li>Compute the error at the outputs.</li>
+<li>Sweep backwards and give every neuron its error.</li>
+<li>Nudge every synapse by learning rate × error at its far end × value at its near end.</li>
+</ol>
+<p>Every weight in the network gets its own personal nudge from one backward sweep, at about the cost of the forward pass.</p>
+
+<h3>For W_Q in the attention head</h3>
+<p>Take the synapse from <code>x_sat[0]</code> to <code>q_sat[0]</code>, which carries <code>W_Q[0][0]</code>. Its error comes back along the path the forward pass took: from the loss to the output, back through the multiply blocks of A · V, the softmax circuit, the score neurons and the q · k multiply blocks, to the <code>q_sat[0]</code> neuron. If raising <code>q_sat[0]</code> would have pushed more attention onto "keys" and made "are" more likely, the error says "higher", and the weight moves up in proportion to <code>x_sat[0]</code>. The algorithm never sees the words "subject" or "agreement". It sees only "raising this number would have lowered the loss by 0.003".</p>
+
+<h3>Why that's enough</h3>
+<ul>
+<li><strong>How much</strong> is answered by the gradient's size. Weights that mattered more for this example move more.</li>
+<li><strong>Which way</strong> is answered by its sign.</li>
+<li><strong>Which weights</strong> comes for free: all of them get nudged, each in proportion to its share of the blame, and most nudges are tiny.</li>
+</ul>
+<p>Meaning never enters into it. "This head tracks subjects" is a label people give <em>afterwards</em> to the pattern left by millions of these blind, local nudges, as <a href="#meaning">the next section</a> describes.</p>
+
+<div class="callout"><p><strong>An analogy.</strong> A blindfolded hiker trying to get downhill can't see the landscape and doesn't know where the valley is. They can feel which way the ground tilts under their feet, take a small step that way, and repeat. Gradient descent is that, in a space with one direction per weight. Backpropagation is the trick that measures the tilt in all of those directions at once. The step is only as good as local information allows. It's greedy, it can only take small steps, and it can settle in a spot that isn't the best possible. In practice, with many weights and many examples, this has worked far better than anyone expected.</p></div>
+
+<!-- ============================================================ -->
+<h2 id="meaning">13. Why should any of this mean anything?</h2>
 
 <p>It's fair to ask why a chain of matrix products, dot products and softmaxes should produce numbers that mean anything. The basic answer: <strong>nobody expects the operations themselves to produce meaningful numbers.</strong> With random weights they don't: the output is noise. The meaning comes from <strong>training</strong>, which adjusts the weights until the numbers <em>are</em> useful. The operations only decide what kinds of things the weights <em>could</em> learn. The belief rests on three ideas, and your skip-gram code already shows all three at work.</p>
 
@@ -1165,7 +1211,7 @@ svg .dot-q { fill: var(--c-q); } svg .dot-k { fill: var(--c-k); }
 <p><strong>You've already watched this happen.</strong> Your skip-gram network starts with random vectors. Nothing in a dot product or a sigmoid says "king" should end up near "queen". The guess-the-neighbour game, repeated thousands of times, pushes them together because that is what lowers the loss. Attention is the same principle with more flexible machinery: random weights + an architecture that can express useful operations + a prediction task + many gradient steps = weights that reflect the structure of the data.</p>
 
 <!-- ============================================================ -->
-<h2 id="real">13. How real code does it</h2>
+<h2 id="real">14. How real code does it</h2>
 
 <p>Nobody builds attention out of <code>Neuron</code> objects in practice. Real code writes it as a few matrix operations, roughly <code>softmax(Q @ K.T / sqrt(d_k) + mask) @ V</code>, and a GPU runs thousands of multiply-adds at once. That is the same arithmetic as the network above, packed differently:</p>
 <ul>
@@ -1178,7 +1224,7 @@ svg .dot-q { fill: var(--c-q); } svg .dot-k { fill: var(--c-k); }
 <div class="callout"><p><strong>Another way to see Step 4.</strong> Look at the score neuron again, using the "gated synapse" idea from Step 2. For a given sentence, <code>k_cat</code> acts like a set of <em>synapse weights</em> that <code>q_sat</code> passes through. Skip-gram's output neuron does exactly this with <code>context_vector</code>. The difference is that in skip-gram those weights are learned once and stored, while in attention they are <em>recomputed for every sentence</em> from the tokens themselves. That is why attention is often described as a layer whose weights depend on the input.</p></div>
 
 <!-- ============================================================ -->
-<h2 id="summary">14. Summary: maths to neurons</h2>
+<h2 id="summary">15. Summary: maths to neurons</h2>
 
 <div class="table-wrap"><table>
 <thead><tr><th>In the formula</th><th>As neurons and synapses</th><th>Trained?</th></tr></thead>
