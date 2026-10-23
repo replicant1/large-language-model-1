@@ -675,7 +675,7 @@ svg .dot-q { fill: var(--c-q); } svg .dot-k { fill: var(--c-k); }
 <text x="595.0" y="308.0" font-size="12" text-anchor="middle" class="mono" font-weight="600">x_sat</text>
 <text x="360.0" y="20.0" font-size="12" text-anchor="middle" class="muted">The thick synapses all carry the same weight, W_Q[0][0] = 1.0</text>
 </svg>
-<figcaption><span class="fig-label">Fig. 7.</span> Q = X · W_Q (and likewise K and V) for the whole sentence. Each token has its own neurons, but the 18 weights are shared. The synapse from <code>x[0]</code> to <code>q[0]</code> has the weight 1.0 in all three copies. <span class="c-q">Blue</span> synapses feed queries, <span class="c-k">green</span> feed keys and <span class="c-v">gold</span> feed values.</figcaption>
+<figcaption><span class="fig-label">Fig. 7.</span> Q = X · W_Q (and likewise K and V) for the whole sentence (one input). Each token has its own neurons, but the 18 weights are shared, both across the tokens here and across every input the model ever sees. The synapse from <code>x[0]</code> to <code>q[0]</code> has the weight 1.0 in all three copies. <span class="c-q">Blue</span> synapses feed queries, <span class="c-k">green</span> feed keys and <span class="c-v">gold</span> feed values.</figcaption>
 </figure>
 
 <p>With <code>Synapse</code> objects, "shared" means the three synapses must always hold equal weights. During training their nudges are added together and the total is applied to all three, so they never drift apart (see <a href="#training">section 11</a>). Running the same network on every token in a sentence like this is what lets a Transformer handle a sentence of any length with a fixed number of weights.</p>
