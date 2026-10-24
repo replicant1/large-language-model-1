@@ -164,6 +164,19 @@ svg .dot-q { fill: var(--c-q); } svg .dot-k { fill: var(--c-k); }
 #netSvg circle { stroke-width: 1.2; transition: opacity 0.15s; }
 #netSvg circle.dim { opacity: 0.3; }
 #netSvg circle:hover { stroke-width: 2.5; cursor: pointer; }
+.bp-stage { margin: 4px 0 6px; font-size: 0.95rem; }
+.bp-stage .muted { color: var(--muted); font-size: 0.85rem; }
+.bp-explain { background: var(--surface-2); border-radius: 8px; padding: 10px 14px; margin-top: 10px; font-size: 0.92rem; line-height: 1.6; min-height: 7.5em; }
+.bp-explain code { font-size: 0.85em; }
+.controls button:disabled { opacity: 0.4; cursor: default; }
+svg .err-pill { fill: var(--neg-soft); stroke: var(--c-o); stroke-width: 1.2; }
+svg .err-text { fill: var(--c-o); font-weight: 700; }
+svg .wlabel.nudge { fill: var(--violet-soft); stroke: var(--c-s); stroke-width: 1.4; }
+#bpSvg line.flow { stroke-dasharray: 6 5; animation: bpFlow 0.9s linear infinite; }
+#bpSvg line.flow.back { stroke: var(--c-o); stroke-width: 2.4; animation-direction: reverse; }
+#bpSvg line.hot { stroke-width: 4; }
+@keyframes bpFlow { to { stroke-dashoffset: -22; } }
+@media (prefers-reduced-motion: reduce) { #bpSvg line.flow { animation: none; } }
 </style>
 </head>
 <body>
@@ -204,6 +217,7 @@ svg .dot-q { fill: var(--c-q); } svg .dot-k { fill: var(--c-k); }
 <li><a href="#whole">The whole head as one network</a></li>
 <li><a href="#training">Training: which synapses learn</a></li>
 <li><a href="#nudge">How gradient descent knows what to nudge</a></li>
+<li><a href="#backprop">Backpropagation, step by step</a></li>
 <li><a href="#meaning">Why should any of this mean anything?</a></li>
 <li><a href="#real">How real code does it</a></li>
 <li><a href="#summary">Summary: maths to neurons</a></li>
@@ -762,7 +776,7 @@ svg .dot-q { fill: var(--c-q); } svg .dot-k { fill: var(--c-k); }
 <p>The square trick is used here because it needs nothing but weighted sums and a one-input activation function, which is exactly what your <code>Neuron</code> class provides. Other designs reach the same product differently:</p>
 <ul>
 <li><strong>Product neurons</strong> (also called "sigma-pi" units) multiply their inputs instead of adding them. This means adding a new kind of neuron.</li>
-<li><strong>Gated synapses</strong> have a weight that is <em>set by another neuron's value</em> while the network runs. The product <code>q[c] × k[c]</code> becomes "q[c] passing through a synapse whose weight is k[c] right now". This is how matrix code effectively treats K, and <a href="#real">section 14</a> comes back to it.</li>
+<li><strong>Gated synapses</strong> have a weight that is <em>set by another neuron's value</em> while the network runs. The product <code>q[c] × k[c]</code> becomes "q[c] passing through a synapse whose weight is k[c] right now". This is how matrix code effectively treats K, and <a href="#real">section 15</a> comes back to it.</li>
 <li><strong>Log domain</strong>: for positive numbers, a × b = exp(log a + log b). This is two log neurons and an exp neuron. It fails for zero and for negative values, which queries and keys often have.</li>
 </ul>
 <p>All of these give the same number. The neuron count changes, but the attention mechanism doesn't.</p>
@@ -1152,7 +1166,7 @@ synapse_out.weight += grad * hidden_value       <span class="c"># × value it co
 <li>Sweep backwards and give every neuron its error.</li>
 <li>Nudge every synapse by learning rate × error at its far end × value at its near end.</li>
 </ol>
-<p>Every weight in the network gets its own personal nudge from one backward sweep, at about the cost of the forward pass.</p>
+<p>Every weight in the network gets its own personal nudge from one backward sweep, at about the cost of the forward pass. <a href="#backprop">Section 13</a> shows every number of one backward sweep, with pictures.</p>
 
 <h3>For W_Q in the attention head</h3>
 <p>Take the synapse from <code>x_sat[0]</code> to <code>q_sat[0]</code>, which carries <code>W_Q[0][0]</code>. Its error comes back along the path the forward pass took: from the loss to the output, back through the multiply blocks of A · V, the softmax circuit, the score neurons and the q · k multiply blocks, to the <code>q_sat[0]</code> neuron. If raising <code>q_sat[0]</code> would have pushed more attention onto "keys" and made "are" more likely, the error says "higher", and the weight moves up in proportion to <code>x_sat[0]</code>. The algorithm never sees the words "subject" or "agreement". It sees only "raising this number would have lowered the loss by 0.003".</p>
@@ -1168,7 +1182,124 @@ synapse_out.weight += grad * hidden_value       <span class="c"># × value it co
 <div class="callout"><p><strong>An analogy.</strong> A blindfolded hiker trying to get downhill can't see the landscape and doesn't know where the valley is. They can feel which way the ground tilts under their feet, take a small step that way, and repeat. Gradient descent is that, in a space with one direction per weight. Backpropagation is the trick that measures the tilt in all of those directions at once. The step is only as good as local information allows. It's greedy, it can only take small steps, and it can settle in a spot that isn't the best possible. In practice, with many weights and many examples, this has worked far better than anyone expected.</p></div>
 
 <!-- ============================================================ -->
-<h2 id="meaning">13. Why should any of this mean anything?</h2>
+<h2 id="backprop">13. Backpropagation, step by step</h2>
+
+<p>This section runs one full training step on a network small enough to show every number: the forward pass, the loss, the error at every neuron, and the nudge for every trained synapse. The network is a one-number slice of attention. A query token's input <code>x</code> makes a query <code>q</code>, a key token's input <code>y</code> makes a key <code>k</code>, and a multiply block works out the score <code>s = q × k</code>. (With one number per vector, d<sub>k</sub> = 1 and there is no √d<sub>k</sub> to divide by.)</p>
+
+<p>To give it something to learn, we pretend the job is "this query should attend to this key". A sigmoid output neuron turns the score into <code>p</code>, the model's probability for "yes", just like your skip-gram output neuron. In a real Transformer the error at the score would arrive from the softmax and every layer above it. Here a single sigmoid stands in for all of that, so the whole path fits in one picture.</p>
+
+<h3>How the loss is worked out</h3>
+<p>The loss measures how wrong the prediction was. When the right answer is "yes", the loss is <code>−ln p</code>, the same formula your skip-gram code uses for a real pair. If the model was sure and right (p = 1) the loss is 0. As p falls towards 0 the loss climbs steeply, so a confident wrong answer costs far more than a hesitant one:</p>
+
+<figure id="fig-15">
+<svg viewBox="0 0 720 250" role="img" aria-label="The loss minus log p against p: zero when p is 1, rising steeply as p approaches 0">
+<line x1="70" y1="204" x2="690" y2="204" class="axis"/><line x1="70" y1="24" x2="70" y2="204" class="axis"/>
+<line x1="70" y1="159.0" x2="690" y2="159.0" class="axis" opacity="0.5"/>
+<text x="62.0" y="163.0" font-size="11" text-anchor="end" class="muted">1</text>
+<line x1="70" y1="114.0" x2="690" y2="114.0" class="axis" opacity="0.5"/>
+<text x="62.0" y="118.0" font-size="11" text-anchor="end" class="muted">2</text>
+<line x1="70" y1="69.0" x2="690" y2="69.0" class="axis" opacity="0.5"/>
+<text x="62.0" y="73.0" font-size="11" text-anchor="end" class="muted">3</text>
+<line x1="70" y1="24.0" x2="690" y2="24.0" class="axis" opacity="0.5"/>
+<text x="62.0" y="28.0" font-size="11" text-anchor="end" class="muted">4</text>
+<text x="70.0" y="222.0" font-size="11" text-anchor="middle" class="muted">0</text>
+<text x="225.0" y="222.0" font-size="11" text-anchor="middle" class="muted">0.25</text>
+<text x="380.0" y="222.0" font-size="11" text-anchor="middle" class="muted">0.5</text>
+<text x="535.0" y="222.0" font-size="11" text-anchor="middle" class="muted">0.75</text>
+<text x="690.0" y="222.0" font-size="11" text-anchor="middle" class="muted">1</text>
+<text x="62.0" y="208.0" font-size="11" text-anchor="end" class="muted">0</text>
+<text x="380.0" y="240.0" font-size="12" text-anchor="middle" class="muted">p = the model's probability for "yes"</text>
+<text x="18.0" y="120.0" font-size="12" text-anchor="middle" class="muted">loss</text>
+<polyline points="81.4,24.0 84.4,34.7 87.4,43.3 90.5,50.5 93.5,56.8 96.6,62.3 99.6,67.1 102.7,71.5 105.7,75.5 108.7,79.2 111.8,82.6 114.8,85.8 117.9,88.7 120.9,91.5 124.0,94.1 127.0,96.6 130.0,98.9 133.1,101.2 136.1,103.3 139.2,105.3 142.2,107.2 145.3,109.1 148.3,110.9 151.3,112.6 154.4,114.3 157.4,115.9 160.5,117.4 163.5,118.9 166.6,120.3 169.6,121.7 172.7,123.1 175.7,124.4 178.7,125.7 181.8,126.9 184.8,128.1 187.9,129.3 190.9,130.4 194.0,131.6 197.0,132.7 200.0,133.7 203.1,134.8 206.1,135.8 209.2,136.8 212.2,137.7 215.3,138.7 218.3,139.6 221.3,140.5 224.4,141.4 227.4,142.3 230.5,143.2 233.5,144.0 236.6,144.9 239.6,145.7 242.6,146.5 245.7,147.3 248.7,148.0 251.8,148.8 254.8,149.5 257.9,150.3 260.9,151.0 263.9,151.7 267.0,152.4 270.0,153.1 273.1,153.8 276.1,154.4 279.2,155.1 282.2,155.8 285.3,156.4 288.3,157.0 291.3,157.6 294.4,158.3 297.4,158.9 300.5,159.5 303.5,160.1 306.6,160.6 309.6,161.2 312.6,161.8 315.7,162.3 318.7,162.9 321.8,163.4 324.8,164.0 327.9,164.5 330.9,165.0 333.9,165.6 337.0,166.1 340.0,166.6 343.1,167.1 346.1,167.6 349.2,168.1 352.2,168.6 355.2,169.1 358.3,169.5 361.3,170.0 364.4,170.5 367.4,170.9 370.5,171.4 373.5,171.9 376.5,172.3 379.6,172.7 382.6,173.2 385.7,173.6 388.7,174.1 391.8,174.5 394.8,174.9 397.9,175.3 400.9,175.7 403.9,176.2 407.0,176.6 410.0,177.0 413.1,177.4 416.1,177.8 419.2,178.2 422.2,178.6 425.2,178.9 428.3,179.3 431.3,179.7 434.4,180.1 437.4,180.5 440.5,180.8 443.5,181.2 446.5,181.6 449.6,181.9 452.6,182.3 455.7,182.6 458.7,183.0 461.8,183.3 464.8,183.7 467.8,184.0 470.9,184.4 473.9,184.7 477.0,185.1 480.0,185.4 483.1,185.7 486.1,186.1 489.1,186.4 492.2,186.7 495.2,187.0 498.3,187.4 501.3,187.7 504.4,188.0 507.4,188.3 510.4,188.6 513.5,188.9 516.5,189.2 519.6,189.5 522.6,189.8 525.7,190.1 528.7,190.4 531.8,190.7 534.8,191.0 537.8,191.3 540.9,191.6 543.9,191.9 547.0,192.2 550.0,192.5 553.1,192.8 556.1,193.1 559.1,193.3 562.2,193.6 565.2,193.9 568.3,194.2 571.3,194.4 574.4,194.7 577.4,195.0 580.4,195.3 583.5,195.5 586.5,195.8 589.6,196.0 592.6,196.3 595.7,196.6 598.7,196.8 601.7,197.1 604.8,197.3 607.8,197.6 610.9,197.9 613.9,198.1 617.0,198.4 620.0,198.6 623.0,198.9 626.1,199.1 629.1,199.4 632.2,199.6 635.2,199.8 638.3,200.1 641.3,200.3 644.4,200.6 647.4,200.8 650.4,201.0 653.5,201.3 656.5,201.5 659.6,201.7 662.6,202.0 665.7,202.2 668.7,202.4 671.7,202.7 674.8,202.9 677.8,203.1 680.9,203.3 683.9,203.6 687.0,203.8 690.0,204.0" fill="none" stroke="var(--c-o)" stroke-width="2.6"/>
+<polyline points="70.0,204.0 73.0,203.8 76.1,203.6 79.1,203.3 82.2,203.1 85.2,202.9 88.3,202.7 91.3,202.4 94.3,202.2 97.4,202.0 100.4,201.7 103.5,201.5 106.5,201.3 109.6,201.0 112.6,200.8 115.6,200.6 118.7,200.3 121.7,200.1 124.8,199.8 127.8,199.6 130.9,199.4 133.9,199.1 137.0,198.9 140.0,198.6 143.0,198.4 146.1,198.1 149.1,197.9 152.2,197.6 155.2,197.3 158.3,197.1 161.3,196.8 164.3,196.6 167.4,196.3 170.4,196.0 173.5,195.8 176.5,195.5 179.6,195.3 182.6,195.0 185.6,194.7 188.7,194.4 191.7,194.2 194.8,193.9 197.8,193.6 200.9,193.3 203.9,193.1 206.9,192.8 210.0,192.5 213.0,192.2 216.1,191.9 219.1,191.6 222.2,191.3 225.2,191.0 228.2,190.7 231.3,190.4 234.3,190.1 237.4,189.8 240.4,189.5 243.5,189.2 246.5,188.9 249.6,188.6 252.6,188.3 255.6,188.0 258.7,187.7 261.7,187.4 264.8,187.0 267.8,186.7 270.9,186.4 273.9,186.1 276.9,185.7 280.0,185.4 283.0,185.1 286.1,184.7 289.1,184.4 292.2,184.0 295.2,183.7 298.2,183.3 301.3,183.0 304.3,182.6 307.4,182.3 310.4,181.9 313.5,181.6 316.5,181.2 319.5,180.8 322.6,180.5 325.6,180.1 328.7,179.7 331.7,179.3 334.8,178.9 337.8,178.6 340.8,178.2 343.9,177.8 346.9,177.4 350.0,177.0 353.0,176.6 356.1,176.2 359.1,175.7 362.1,175.3 365.2,174.9 368.2,174.5 371.3,174.1 374.3,173.6 377.4,173.2 380.4,172.7 383.5,172.3 386.5,171.9 389.5,171.4 392.6,170.9 395.6,170.5 398.7,170.0 401.7,169.5 404.8,169.1 407.8,168.6 410.8,168.1 413.9,167.6 416.9,167.1 420.0,166.6 423.0,166.1 426.1,165.6 429.1,165.0 432.1,164.5 435.2,164.0 438.2,163.4 441.3,162.9 444.3,162.3 447.4,161.8 450.4,161.2 453.4,160.6 456.5,160.1 459.5,159.5 462.6,158.9 465.6,158.3 468.7,157.6 471.7,157.0 474.7,156.4 477.8,155.8 480.8,155.1 483.9,154.4 486.9,153.8 490.0,153.1 493.0,152.4 496.1,151.7 499.1,151.0 502.1,150.3 505.2,149.5 508.2,148.8 511.3,148.0 514.3,147.3 517.4,146.5 520.4,145.7 523.4,144.9 526.5,144.0 529.5,143.2 532.6,142.3 535.6,141.4 538.7,140.5 541.7,139.6 544.7,138.7 547.8,137.7 550.8,136.8 553.9,135.8 556.9,134.8 560.0,133.7 563.0,132.7 566.0,131.6 569.1,130.4 572.1,129.3 575.2,128.1 578.2,126.9 581.3,125.7 584.3,124.4 587.3,123.1 590.4,121.7 593.4,120.3 596.5,118.9 599.5,117.4 602.6,115.9 605.6,114.3 608.7,112.6 611.7,110.9 614.7,109.1 617.8,107.2 620.8,105.3 623.9,103.3 626.9,101.2 630.0,98.9 633.0,96.6 636.0,94.1 639.1,91.5 642.1,88.7 645.2,85.8 648.2,82.6 651.3,79.2 654.3,75.5 657.3,71.5 660.4,67.1 663.4,62.3 666.5,56.8 669.5,50.5 672.6,43.3 675.6,34.7 678.6,24.0" fill="none" stroke="var(--muted)" stroke-width="1.6" stroke-dasharray="5 4"/>
+<line x1="414.7" y1="177.6" x2="414.7" y2="204" class="axis" stroke-dasharray="3 3"/>
+<circle cx="414.7" cy="177.6" r="6" fill="var(--c-o)"/>
+<text x="194.0" y="80.2" font-size="12" text-anchor="start" font-weight="600">this example: p = 0.556, loss = 0.587</text>
+<line x1="384.7" y1="86.1" x2="411.7" y2="169.6" stroke="var(--ink)" stroke-width="1"/>
+<text x="110.3" y="42.0" font-size="11.5" text-anchor="start" class="muted">answer is yes, but p is near 0:</text>
+<text x="110.3" y="57.0" font-size="11.5" text-anchor="start" class="muted">confident and wrong, huge loss</text>
+<text x="671.4" y="192.8" font-size="11.5" text-anchor="end" class="muted">p = 1: loss 0</text>
+<text x="466.8" y="91.5" font-size="11.5" text-anchor="start" class="muted">dashed: if the right answer</text>
+<text x="466.8" y="106.5" font-size="11.5" text-anchor="start" class="muted">were "no", loss = −ln(1 − p)</text>
+</svg>
+<figcaption><span class="fig-label">Fig. 15.</span> The loss for a "yes" answer, <code>−ln p</code>. The example below starts at p = 0.556, a loss of 0.587. Training is the search for weights that push p towards 1 and the loss towards 0. The slope of this curve at the current point is where the backward pass starts.</figcaption>
+</figure>
+
+<h3>The whole step, one stage at a time</h3>
+<p>Press <b>Next</b> to move through the stages. Values flow left to right in the forward pass. <span class="c-o">Errors</span> flow right to left in the backward pass and appear in the orange tags under each neuron. A neuron's error is <em>how much higher its sum should have been</em>, as defined in <a href="#nudge">section 12</a>. Then <span class="c-s">nudges</span> appear on the trained synapses. After "Apply and re-run", Next starts another round with the new weights, so you can watch the loss fall.</p>
+
+<figure id="fig-16">
+<div class="controls" id="bpControls">
+<button type="button" id="bpBack">◀ Back</button>
+<button type="button" id="bpNext">Next ▶</button>
+<button type="button" id="bpTrain">Train ×10</button>
+<button type="button" id="bpReset">Reset</button>
+<span class="sep"></span>
+<span style="font-size:0.88rem;color:var(--muted)">Right answer</span>
+<button type="button" data-label="1" aria-pressed="true">yes, attend</button><button type="button" data-label="0">no</button>
+</div>
+<div class="bp-stage"><b id="bpStageName">Start</b> <span id="bpStageNum" class="muted"></span></div>
+<svg id="bpSvg" viewBox="0 0 720 350" role="img" aria-label="A small network computing q times k with a multiply block and a sigmoid output, showing values, errors and nudges stage by stage"></svg>
+<div class="legend">
+<span><i style="background:var(--accent-soft);border-color:var(--c-q)"></i>trained (query side)</span>
+<span><i style="background:var(--pos-soft);border-color:var(--c-k)"></i>trained (key side)</span>
+<span><i style="background:var(--surface);border-color:var(--muted);border-style:dashed"></i>fixed wiring</span>
+<span><i style="background:var(--neg-soft);border-color:var(--c-o)"></i>error tag</span>
+<span><i style="background:var(--violet-soft);border-color:var(--c-s)"></i>nudge</span>
+</div>
+<div class="bp-explain" id="bpExplain"></div>
+<div class="readout">
+<div><small>round</small><b id="bpRound">1</b></div>
+<div><small>p (probability of the right answer)</small><b id="bpP">—</b></div>
+<div><small>loss</small><b id="bpLoss">—</b></div>
+<div><small>loss by round</small><svg id="bpSpark" viewBox="0 0 120 28" style="width:100%;height:28px"></svg></div>
+</div>
+<figcaption><span class="fig-label">Fig. 16.</span> One training step of backpropagation, every number shown. The blue and green synapses are the trained weights, a one-column W_Q (into q) and W_K (into k). The grey synapses are the multiply block's fixed wiring: they pass the error back but are never changed. Switch the right answer to "no" and every error changes sign, so the same machinery pushes p down instead.</figcaption>
+</figure>
+
+<p>Three rules did all the work, and each one only looked at a single neuron or synapse:</p>
+<ol>
+<li><strong>Loss and output error.</strong> Compare the prediction with the right answer. For a sigmoid output with <code>−ln</code> loss, the error at the output is simply <code>label − p</code>.</li>
+<li><strong>Error at every other neuron</strong> = (Σ over its outgoing synapses of weight × error at the far end) × the slope of its own activation.</li>
+<li><strong>Nudge for every trained synapse</strong> = learning rate × error at the neuron it feeds × value of the neuron it comes from.</li>
+</ol>
+
+<h3 id="lr">Choosing the learning rate</h3>
+<div class="where"><span class="where-label">In the code</span><a class="src" href="https://github.com/replicant1/large-language-model-1/blob/c1f0f57/neural-net/src/skip_gram_trainer.py#L127-L138" target="_blank" rel="noopener"><span class="src-name">SkipGramTrainer.learning_rate</span><span class="src-loc">skip_gram_trainer.py lines 127–138</span></a></div>
+<p>The learning rate is a <strong>hyperparameter</strong>: people choose it before training, and training doesn't learn it. Backpropagation gives every weight a direction and a relative size of nudge, and the learning rate scales all of those nudges at once. It sets how big a step the blindfolded hiker takes. Too small, and training crawls. Too large, and a step overshoots the bottom of the valley, so the loss jumps around or blows up. The gradient only describes the slope <em>right here</em>, and a big step trusts it too far.</p>
+<ul>
+<li><strong>How it is chosen.</strong> Usually by experiment. Run short trainings at values spaced on a log scale (0.1, 0.03, 0.01, 0.003, …) and keep the one whose loss falls fastest without becoming unstable. Another option is a range test, which raises the rate during one short run and picks a value just below where the loss shoots up. Known defaults help: your skip-gram trainer uses word2vec's, and Transformers trained with the Adam optimiser often start around 0.0003. Bigger models need smaller rates: GPT-3 used 0.0006 for its smallest model and 0.00006 for its largest.</li>
+<li><strong>It changes during training.</strong> Your <code>SkipGramTrainer</code> lowers it in a straight line from 0.025 to 0.001 across the epochs: big steps early to cover ground, small steps late to settle into the bottom instead of bouncing around it. Transformers also add a <em>warm-up</em>. The rate starts near 0 and rises over the first few thousand steps, because gradients from random weights are unreliable, and then it decays.</li>
+<li><strong>Partly automatic.</strong> Plain gradient descent, as in <code>train_pair</code> and Fig. 16, uses one rate for every weight. Adam keeps a running average of each weight's recent gradients and scales each weight's step by them, so a weight with large or noisy gradients takes smaller steps. A person still picks the overall rate.</li>
+</ul>
+<p class="muted" style="font-size:0.92rem">The 0.5 in Fig. 16 is large on purpose, so the changes are visible within a few rounds. That suits this tiny network but would be far too big for a real model.</p>
+
+<details class="deeper"><summary>All the numbers for round 1<span class="tag">table</span></summary><div class="body">
+<div class="table-wrap"><table>
+<thead><tr><th>Neuron</th><th class="r">value (forward)</th><th class="r">error (backward)</th><th>activation and slope</th></tr></thead>
+<tbody>
+<tr><td class="mono">x[0], x[1]</td><td class="mono r">1.000, 0.500</td><td class="mono r c-o">—</td><td>inputs (query token)</td></tr>
+<tr><td class="mono">y[0], y[1]</td><td class="mono r">0.500, 1.000</td><td class="mono r c-o">—</td><td>inputs (key token)</td></tr>
+<tr><td class="mono">q</td><td class="mono r">0.300</td><td class="mono r c-o">+0.333</td><td>identity</td></tr>
+<tr><td class="mono">k</td><td class="mono r">0.750</td><td class="mono r c-o">+0.133</td><td>identity</td></tr>
+<tr><td class="mono">(q + k)²</td><td class="mono r">1.1025</td><td class="mono r c-o">+0.233</td><td>square, input 1.05, slope 2.10</td></tr>
+<tr><td class="mono">(q − k)²</td><td class="mono r">0.2025</td><td class="mono r c-o">+0.100</td><td>square, input −0.45, slope −0.90</td></tr>
+<tr><td class="mono">s = q × k</td><td class="mono r">0.225</td><td class="mono r c-o">+0.444</td><td>identity</td></tr>
+<tr><td class="mono">p</td><td class="mono r">0.556</td><td class="mono r c-o">+0.444</td><td>sigmoid; error = label − p</td></tr>
+</tbody></table></div>
+<div class="table-wrap"><table>
+<thead><tr><th>Trained synapse</th><th class="r">weight</th><th>lr × error × input</th><th class="r">nudge</th><th class="r">new weight</th></tr></thead>
+<tbody>
+<tr><td class="mono">W_Q[0]: x[0] → q</td><td class="mono r">0.40</td><td class="mono">0.5 × +0.333 × 1.00</td><td class="mono r c-s">+0.166</td><td class="mono r">0.566</td></tr>
+<tr><td class="mono">W_Q[1]: x[1] → q</td><td class="mono r">−0.20</td><td class="mono">0.5 × +0.333 × 0.50</td><td class="mono r c-s">+0.083</td><td class="mono r">−0.117</td></tr>
+<tr><td class="mono">W_K[0]: y[0] → k</td><td class="mono r">0.30</td><td class="mono">0.5 × +0.133 × 0.50</td><td class="mono r c-s">+0.033</td><td class="mono r">0.333</td></tr>
+<tr><td class="mono">W_K[1]: y[1] → k</td><td class="mono r">0.60</td><td class="mono">0.5 × +0.133 × 1.00</td><td class="mono r c-s">+0.067</td><td class="mono r">0.667</td></tr>
+</tbody></table></div>
+<p>With the new weights, p rises from 0.556 to 0.604 and the loss falls from 0.587 to 0.504. The errors at q and k (+0.333 and +0.133) are exactly error at s × k and error at s × q, the slopes of q × k. The multiply block passed the error back correctly using nothing but its weights and the slope of the square activation.</p>
+</div></details>
+
+<!-- ============================================================ -->
+<h2 id="meaning">14. Why should any of this mean anything?</h2>
 
 <p>It's fair to ask why a chain of matrix products, dot products and softmaxes should produce numbers that mean anything. The basic answer: <strong>nobody expects the operations themselves to produce meaningful numbers.</strong> With random weights they don't: the output is noise. The meaning comes from <strong>training</strong>, which adjusts the weights until the numbers <em>are</em> useful. The operations only decide what kinds of things the weights <em>could</em> learn. The belief rests on three ideas, and your skip-gram code already shows all three at work.</p>
 
@@ -1211,7 +1342,7 @@ synapse_out.weight += grad * hidden_value       <span class="c"># × value it co
 <p><strong>You've already watched this happen.</strong> Your skip-gram network starts with random vectors. Nothing in a dot product or a sigmoid says "king" should end up near "queen". The guess-the-neighbour game, repeated thousands of times, pushes them together because that is what lowers the loss. Attention is the same principle with more flexible machinery: random weights + an architecture that can express useful operations + a prediction task + many gradient steps = weights that reflect the structure of the data.</p>
 
 <!-- ============================================================ -->
-<h2 id="real">14. How real code does it</h2>
+<h2 id="real">15. How real code does it</h2>
 
 <p>Nobody builds attention out of <code>Neuron</code> objects in practice. Real code writes it as a few matrix operations, roughly <code>softmax(Q @ K.T / sqrt(d_k) + mask) @ V</code>, and a GPU runs thousands of multiply-adds at once. That is the same arithmetic as the network above, packed differently:</p>
 <ul>
@@ -1224,7 +1355,7 @@ synapse_out.weight += grad * hidden_value       <span class="c"># × value it co
 <div class="callout"><p><strong>Another way to see Step 4.</strong> Look at the score neuron again, using the "gated synapse" idea from Step 2. For a given sentence, <code>k_cat</code> acts like a set of <em>synapse weights</em> that <code>q_sat</code> passes through. Skip-gram's output neuron does exactly this with <code>context_vector</code>. The difference is that in skip-gram those weights are learned once and stored, while in attention they are <em>recomputed for every sentence</em> from the tokens themselves. That is why attention is often described as a layer whose weights depend on the input.</p></div>
 
 <!-- ============================================================ -->
-<h2 id="summary">15. Summary: maths to neurons</h2>
+<h2 id="summary">16. Summary: maths to neurons</h2>
 
 <div class="table-wrap"><table>
 <thead><tr><th>In the formula</th><th>As neurons and synapses</th><th>Trained?</th></tr></thead>
@@ -1478,6 +1609,182 @@ synapse_out.weight += grad * hidden_value       <span class="c"># × value it co
     W = JSON.parse(JSON.stringify(EX)); causal = true; document.getElementById("netMask").checked = true; run();
   });
   run();
+})();
+
+// Fig. 16: backpropagation, step by step
+(function () {
+  const X = [1.0, 0.5], Y = [0.5, 1.0], LR = 0.5;
+  const W0 = { q0: 0.4, q1: -0.2, k0: 0.3, k1: 0.6 };
+  let W = { ...W0 }, label = 1, step = 0, round = 1, history = [];
+  const sig = z => 1 / (1 + Math.exp(-z));
+  const f = (v, d = 3) => { let s = v.toFixed(d); if (/^-0\.0*$/.test(s)) s = s.slice(1); return s.replace("-", "−"); };
+  const sg = (v, d = 3) => (v >= 0 ? "+" : "") + f(v, d);
+  function forward(W) {
+    const q = W.q0 * X[0] + W.q1 * X[1], k = W.k0 * Y[0] + W.k1 * Y[1];
+    const zp = q + k, zm = q - k, sqp = zp * zp, sqm = zm * zm;
+    const s = 0.25 * sqp - 0.25 * sqm, p = sig(s);
+    const loss = label === 1 ? -Math.log(p) : -Math.log(1 - p);
+    return { q, k, zp, zm, sqp, sqm, s, p, loss };
+  }
+  function backward(v) {
+    const dp = label - v.p, ds = 1 * dp * 1;
+    const dsqp = 0.25 * ds * 2 * v.zp, dsqm = -0.25 * ds * 2 * v.zm;
+    return { dp, ds, dsqp, dsqm, dq: dsqp + dsqm, dk: dsqp - dsqm };
+  }
+  const nudges = d => ({ q0: LR * d.dq * X[0], q1: LR * d.dq * X[1], k0: LR * d.dk * Y[0], k1: LR * d.dk * Y[1] });
+
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.getElementById("bpSvg");
+  const el = (name, attrs, parent = svg) => { const e = document.createElementNS(NS, name); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.appendChild(e); return e; };
+  const POS = { x0: [60, 60], x1: [60, 125], y0: [60, 245], y1: [60, 310], q: [190, 92], k: [190, 278], sqp: [350, 125], sqm: [350, 245], s: [485, 185], p: [590, 185] };
+  const KIND = { x0: "x", x1: "x", y0: "x", y1: "x", q: "q", k: "k", sqp: "c", sqm: "c", s: "s", p: "o" };
+  const NAME = { q: "q", k: "k", sqp: "(q + k)²", sqm: "(q − k)²", s: "s = q × k", p: "p = sigmoid(s)" };
+  const SYN = [
+    ["x0", "q", "q0", 0.55], ["x1", "q", "q1", 0.55], ["y0", "k", "k0", 0.55], ["y1", "k", "k1", 0.55],
+    ["q", "sqp", "+1", 0.45], ["k", "sqp", "+1", 0.28], ["q", "sqm", "+1", 0.28], ["k", "sqm", "−1", 0.45],
+    ["sqp", "s", "+¼", 0.5], ["sqm", "s", "−¼", 0.5], ["s", "p", "1", 0.5],
+  ];
+  const R = 22;
+  const gl = el("g", {}), gn = el("g", {});
+  const lines = {}, wlab = {}, vals = {}, errs = {};
+  SYN.forEach(([a, b, w, t]) => {
+    const [x1, y1] = POS[a], [x2, y2] = POS[b];
+    const L = Math.hypot(x2 - x1, y2 - y1), ux = (x2 - x1) / L, uy = (y2 - y1) / L;
+    const sx = x1 + ux * R, sy = y1 + uy * R, ex = x2 - ux * R, ey = y2 - uy * R;
+    const trained = w in W0;
+    const cls = trained ? (w[0] === "q" ? "syn-q" : "syn-k") : "syn-c";
+    lines[a + b] = el("line", { x1: sx, y1: sy, x2: ex, y2: ey, class: "syn " + cls, "stroke-width": trained ? 2.2 : 1.4 }, gl);
+    const lx = sx + (ex - sx) * t, ly = sy + (ey - sy) * t;
+    const g = el("g", {}, gl);
+    const rect = el("rect", { x: lx - 24, y: ly - 9, width: 48, height: 18, rx: 4, class: "wlabel" }, g);
+    const tx = el("text", { x: lx, y: ly + 4, "text-anchor": "middle", "font-size": 11, class: "mono" }, g);
+    tx.textContent = trained ? "" : w;
+    if (!trained) { rect.setAttribute("width", 30); rect.setAttribute("x", lx - 15); }
+    wlab[w] = { rect, tx, trained };
+  });
+  const lossLine = el("line", { x1: 612, y1: 185, x2: 628, y2: 185, class: "syn syn-c", "stroke-width": 1.4, "stroke-dasharray": "3 3" }, gl);
+  Object.entries(POS).forEach(([id, [x, y]]) => {
+    el("circle", { cx: x, cy: y, r: R, class: "n n-" + KIND[id] }, gn);
+    vals[id] = el("text", { x, y: y + 4, "text-anchor": "middle", "font-size": 11, class: "mono" }, gn);
+    if (NAME[id]) el("text", { x, y: y - 29, "text-anchor": "middle", "font-size": 11.5, class: "mono" }, gn).textContent = NAME[id];
+    if (id in NAME) {
+      const g = el("g", { visibility: "hidden" }, gn);
+      el("rect", { x: x - 30, y: y + 27, width: 60, height: 18, rx: 9, class: "err-pill" }, g);
+      const t = el("text", { x, y: y + 40, "text-anchor": "middle", "font-size": 11, class: "mono err-text" }, g);
+      errs[id] = { g, t };
+    }
+  });
+  [["x0", "x[0]"], ["x1", "x[1]"], ["y0", "y[0]"], ["y1", "y[1]"]].forEach(([id, nm]) => {
+    el("text", { x: POS[id][0] - 28, y: POS[id][1] + 4, "text-anchor": "end", "font-size": 11, class: "mono" }, gn).textContent = nm;
+  });
+  el("text", { x: 12, y: 24, "font-size": 11.5, class: "muted" }, gn).textContent = "query token's input";
+  el("text", { x: 12, y: 209, "font-size": 11.5, class: "muted" }, gn).textContent = "key token's input";
+  el("rect", { x: 630, y: 160, width: 84, height: 50, rx: 8, class: "bx bx-o" }, gn);
+  el("text", { x: 672, y: 180, "text-anchor": "middle", "font-size": 11.5, class: "muted" }, gn).textContent = "loss";
+  const lossVal = el("text", { x: 672, y: 199, "text-anchor": "middle", "font-size": 13, "font-weight": 700, class: "mono" }, gn);
+
+  const STAGES = ["Start", "Forward pass", "Loss", "Error at the output", "Back through s", "Back through the squares", "Back to q and k", "Nudges", "Apply and re-run"];
+  const BACK = { 3: ["loss"], 4: ["sp"], 5: ["sqps", "sqms"], 6: ["qsqp", "ksqp", "qsqm", "ksqm"] };
+
+  function render() {
+    const v = forward(W), d = backward(v), n = nudges(d);
+    const prev = history.length ? history[history.length - 1] : null;
+    const vOld = step === 8 && prev ? forward(prev) : null;
+    // weights and nudges
+    for (const key in W0) {
+      const { rect, tx } = wlab[key];
+      if (step === 7) { tx.textContent = sg(n[key]); rect.setAttribute("class", "wlabel nudge"); }
+      else { tx.textContent = f(W[key], 2); rect.setAttribute("class", "wlabel" + (step === 8 ? " nudge" : "")); }
+    }
+    // values
+    vals.x0.textContent = f(X[0], 2); vals.x1.textContent = f(X[1], 2); vals.y0.textContent = f(Y[0], 2); vals.y1.textContent = f(Y[1], 2);
+    const show = step >= 1;
+    vals.q.textContent = show ? f(v.q, 2) : ""; vals.k.textContent = show ? f(v.k, 2) : "";
+    vals.sqp.textContent = show ? f(v.sqp, 2) : ""; vals.sqm.textContent = show ? f(v.sqm, 2) : "";
+    vals.s.textContent = show ? f(v.s, 3) : ""; vals.p.textContent = show ? f(v.p, 3) : "";
+    lossVal.textContent = step >= 2 ? f(v.loss, 3) : "";
+    // errors
+    const errAt = { p: [3, d.dp], s: [4, d.ds], sqp: [5, d.dsqp], sqm: [5, d.dsqm], q: [6, d.dq], k: [6, d.dk] };
+    for (const id in errs) {
+      const [from, val] = errAt[id];
+      const on = step >= from && step <= 7;
+      errs[id].g.setAttribute("visibility", on ? "visible" : "hidden");
+      errs[id].t.textContent = sg(val);
+    }
+    // flows
+    Object.values(lines).forEach(l => l.classList.remove("flow", "back", "hot"));
+    lossLine.classList.remove("flow", "back");
+    if (step === 1 || step === 8) Object.values(lines).forEach(l => l.classList.add("flow"));
+    if (step === 2) lossLine.classList.add("flow");
+    (BACK[step] || []).forEach(k => { if (k === "loss") lossLine.classList.add("flow", "back"); else lines[k].classList.add("flow", "back"); });
+    if (step === 7) ["x0q", "x1q", "y0k", "y1k"].forEach(k => lines[k].classList.add("hot"));
+    // readouts
+    document.getElementById("bpStageName").textContent = STAGES[step];
+    document.getElementById("bpStageNum").textContent = `(stage ${step} of 8)`;
+    document.getElementById("bpRound").textContent = round;
+    document.getElementById("bpP").textContent = step >= 1 ? f(label === 1 ? v.p : 1 - v.p, 3) : "—";
+    document.getElementById("bpLoss").textContent = step >= 2 ? f(v.loss, 3) : "—";
+    document.getElementById("bpBack").disabled = step === 0 && round === 1;
+    spark();
+    document.getElementById("bpExplain").innerHTML = explain(v, d, n, vOld, prev);
+  }
+
+  function explain(v, d, n, vOld, prev) {
+    const yes = label === 1;
+    switch (step) {
+      case 0: return `Two tokens: a query token with input x = [1.00, 0.50] and a key token with input y = [0.50, 1.00]. The four <span class="c-q">blue</span> and <span class="c-k">green</span> synapses are the trained weights, a one-column W_Q and W_K. Everything grey is the multiply block's fixed wiring. Press <b>Next</b> to run the forward pass.`;
+      case 1: return `<b>Values flow left to right.</b> Each neuron adds weight × value over its incoming synapses, then applies its activation, exactly as <code>Neuron.forward</code> does.<br>q = ${f(W.q0, 2)}×1.00 + ${f(W.q1, 2)}×0.50 = <b>${f(v.q)}</b><br>k = ${f(W.k0, 2)}×0.50 + ${f(W.k1, 2)}×1.00 = <b>${f(v.k)}</b><br>(q + k)² = ${f(v.zp)}² = ${f(v.sqp, 4)}, &nbsp;(q − k)² = ${f(v.zm)}² = ${f(v.sqm, 4)}<br>s = ¼×${f(v.sqp, 4)} − ¼×${f(v.sqm, 4)} = <b>${f(v.s)}</b> (= q × k)<br>p = sigmoid(${f(v.s)}) = <b>${f(v.p)}</b>`;
+      case 2: return yes
+        ? `<b>The loss.</b> The right answer is "yes": this query should attend to this key (label 1). The model said yes with probability p = ${f(v.p)}. Loss = −ln p = −ln(${f(v.p)}) = <b>${f(v.loss)}</b>. It would be 0 only if p were 1 (Fig. 15).`
+        : `<b>The loss.</b> The right answer is "no": this query should <em>not</em> attend to this key (label 0). The model gave "yes" a probability of p = ${f(v.p)}, so "no" got ${f(1 - v.p)}. Loss = −ln(1 − p) = <b>${f(v.loss)}</b>, the dashed curve in Fig. 15.`;
+      case 3: return `<b>Error at the output.</b> Error = how much higher the neuron's sum should have been. For a sigmoid output with −ln loss it comes out simply: error = label − p = ${label} − ${f(v.p)} = <b>${sg(d.dp)}</b>. (${yes ? "The slope of −ln p is −1/p and the sigmoid's slope is p(1 − p). Multiplied, they leave 1 − p." : "The slopes of −ln(1 − p) and the sigmoid multiply to leave −p."}) This is the <code>grad</code> your <code>train_pair</code> computes, before it multiplies by lr. ${d.dp >= 0 ? "Positive: the score should have been higher." : "Negative: the score should have been lower."}`;
+      case 4: return `<b>Back through s.</b> The error moves back along the synapse s → p:<br>error at s = weight (1) × error at p (${sg(d.dp)}) × slope of identity (1) = <b>${sg(d.ds)}</b>`;
+      case 5: return `<b>Back through the squares.</b> Each square neuron takes the weight of its synapse into s times the error at s, then multiplies by its own slope. The slope of square at input z is 2z.<br>(q + k)²: (+¼ × ${sg(d.ds)}) × (2 × ${f(v.zp)}) = <b>${sg(d.dsqp)}</b><br>(q − k)²: (−¼ × ${sg(d.ds)}) × (2 × ${f(v.zm)}) = <b>${sg(d.dsqm)}</b>`;
+      case 6: return `<b>Back to q and k.</b> A neuron with several outgoing synapses adds up what comes back along each one. Their slope is 1 (identity).<br>q: (+1 × ${sg(d.dsqp)}) + (+1 × ${sg(d.dsqm)}) = <b>${sg(d.dq)}</b><br>k: (+1 × ${sg(d.dsqp)}) + (−1 × ${sg(d.dsqm)}) = <b>${sg(d.dk)}</b><br>Check: these equal error at s × k = ${sg(d.ds)} × ${f(v.k)}, and error at s × q = ${sg(d.ds)} × ${f(v.q)}, the slopes of q × k.`;
+      case 7: return `<b>Nudges</b> (learning rate ${LR}). Each trained synapse moves by lr × (error at the neuron it feeds) × (value of the neuron it comes from):<br>W_Q[0]: ${LR} × ${sg(d.dq)} × 1.00 = <b>${sg(n.q0)}</b> &nbsp; W_Q[1]: ${LR} × ${sg(d.dq)} × 0.50 = <b>${sg(n.q1)}</b><br>W_K[0]: ${LR} × ${sg(d.dk)} × 0.50 = <b>${sg(n.k0)}</b> &nbsp; W_K[1]: ${LR} × ${sg(d.dk)} × 1.00 = <b>${sg(n.k1)}</b><br>An input of 0.50 halves its synapse's nudge. The grey synapses passed the error back, but they are fixed, so they don't change.`;
+      case 8: return `<b>Apply and re-run.</b> New weights: W_Q = [${f(W.q0)}, ${f(W.q1)}], W_K = [${f(W.k0)}, ${f(W.k1)}]. Running forward again, the probability of the right answer moves from ${f(yes ? vOld.p : 1 - vOld.p)} to <b>${f(yes ? v.p : 1 - v.p)}</b>, and the loss falls from ${f(vOld.loss)} to <b>${f(v.loss)}</b>. Press <b>Next</b> for round ${round + 1}, or <b>Train ×10</b> to repeat many times.`;
+    }
+  }
+
+  function spark() {
+    const s = document.getElementById("bpSpark");
+    const L = history.map(w => forward(w).loss).concat(step >= 2 ? [forward(W).loss] : []);
+    s.innerHTML = "";
+    if (L.length < 2) return;
+    const max = Math.max(...L), min = 0;
+    const pts = L.map((v, i) => `${(i / (L.length - 1)) * 116 + 2},${26 - (v - min) / (max - min || 1) * 24}`).join(" ");
+    const pl = document.createElementNS(NS, "polyline");
+    pl.setAttribute("points", pts); pl.setAttribute("fill", "none"); pl.setAttribute("stroke", "var(--c-o)"); pl.setAttribute("stroke-width", "2");
+    s.appendChild(pl);
+  }
+
+  function next() {
+    if (step < 7) step++;
+    else if (step === 7) { history.push({ ...W }); const n = nudges(backward(forward(W))); for (const k in W) W[k] += n[k]; step = 8; }
+    else { step = 1; round++; }
+    render();
+  }
+  function back() {
+    if (step === 8) { W = history.pop(); step = 7; }
+    else if (step === 1 && round > 1) { step = 8; round--; }
+    else if (step > 0) step--;
+    render();
+  }
+  document.getElementById("bpNext").addEventListener("click", next);
+  document.getElementById("bpBack").addEventListener("click", back);
+  document.getElementById("bpTrain").addEventListener("click", () => {
+    if (step === 8) round++;
+    for (let i = 0; i < 10; i++) { history.push({ ...W }); const n = nudges(backward(forward(W))); for (const k in W) W[k] += n[k]; }
+    round += 9; step = 8; render();
+  });
+  const reset = () => { W = { ...W0 }; history = []; step = 0; round = 1; render(); };
+  document.getElementById("bpReset").addEventListener("click", reset);
+  document.querySelectorAll("#bpControls [data-label]").forEach(b => b.addEventListener("click", () => {
+    label = +b.dataset.label;
+    document.querySelectorAll("#bpControls [data-label]").forEach(o => o.setAttribute("aria-pressed", o === b ? "true" : "false"));
+    reset();
+  }));
+  render();
 })();
 </script>
 </body>
