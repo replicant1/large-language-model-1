@@ -217,6 +217,7 @@ svg .wlabel.nudge { fill: var(--violet-soft); stroke: var(--c-s); stroke-width: 
 <li><a href="#whole">The whole head as one network</a></li>
 <li><a href="#training">Training: which synapses learn</a></li>
 <li><a href="#nudge">How gradient descent knows what to nudge</a></li>
+<li><a href="#descent">Gradient descent, seen from one neuron</a></li>
 <li><a href="#backprop">Backpropagation, step by step</a></li>
 <li><a href="#meaning">Why should any of this mean anything?</a></li>
 <li><a href="#real">How real code does it</a></li>
@@ -776,7 +777,7 @@ svg .wlabel.nudge { fill: var(--violet-soft); stroke: var(--c-s); stroke-width: 
 <p>The square trick is used here because it needs nothing but weighted sums and a one-input activation function, which is exactly what your <code>Neuron</code> class provides. Other designs reach the same product differently:</p>
 <ul>
 <li><strong>Product neurons</strong> (also called "sigma-pi" units) multiply their inputs instead of adding them. This means adding a new kind of neuron.</li>
-<li><strong>Gated synapses</strong> have a weight that is <em>set by another neuron's value</em> while the network runs. The product <code>q[c] × k[c]</code> becomes "q[c] passing through a synapse whose weight is k[c] right now". This is how matrix code effectively treats K, and <a href="#real">section 15</a> comes back to it.</li>
+<li><strong>Gated synapses</strong> have a weight that is <em>set by another neuron's value</em> while the network runs. The product <code>q[c] × k[c]</code> becomes "q[c] passing through a synapse whose weight is k[c] right now". This is how matrix code effectively treats K, and <a href="#real">section 16</a> comes back to it.</li>
 <li><strong>Log domain</strong>: for positive numbers, a × b = exp(log a + log b). This is two log neurons and an exp neuron. It fails for zero and for negative values, which queries and keys often have.</li>
 </ul>
 <p>All of these give the same number. The neuron count changes, but the attention mechanism doesn't.</p>
@@ -1166,7 +1167,7 @@ synapse_out.weight += grad * hidden_value       <span class="c"># × value it co
 <li>Sweep backwards and give every neuron its error.</li>
 <li>Nudge every synapse by learning rate × error at its far end × value at its near end.</li>
 </ol>
-<p>Every weight in the network gets its own personal nudge from one backward sweep, at about the cost of the forward pass. <a href="#backprop">Section 13</a> shows every number of one backward sweep, with pictures.</p>
+<p>Every weight in the network gets its own personal nudge from one backward sweep, at about the cost of the forward pass. <a href="#backprop">Section 14</a> shows every number of one backward sweep, with pictures.</p>
 
 <h3>For W_Q in the attention head</h3>
 <p>Take the synapse from <code>x_sat[0]</code> to <code>q_sat[0]</code>, which carries <code>W_Q[0][0]</code>. Its error comes back along the path the forward pass took: from the loss to the output, back through the multiply blocks of A · V, the softmax circuit, the score neurons and the q · k multiply blocks, to the <code>q_sat[0]</code> neuron. If raising <code>q_sat[0]</code> would have pushed more attention onto "keys" and made "are" more likely, the error says "higher", and the weight moves up in proportion to <code>x_sat[0]</code>. The algorithm never sees the words "subject" or "agreement". It sees only "raising this number would have lowered the loss by 0.003".</p>
@@ -1182,7 +1183,52 @@ synapse_out.weight += grad * hidden_value       <span class="c"># × value it co
 <div class="callout"><p><strong>An analogy.</strong> A blindfolded hiker trying to get downhill can't see the landscape and doesn't know where the valley is. They can feel which way the ground tilts under their feet, take a small step that way, and repeat. Gradient descent is that, in a space with one direction per weight. Backpropagation is the trick that measures the tilt in all of those directions at once. The step is only as good as local information allows. It's greedy, it can only take small steps, and it can settle in a spot that isn't the best possible. In practice, with many weights and many examples, this has worked far better than anyone expected.</p></div>
 
 <!-- ============================================================ -->
-<h2 id="backprop">13. Backpropagation, step by step</h2>
+<h2 id="descent">13. Gradient descent, seen from one neuron</h2>
+
+<p>Backpropagation (<a href="#backprop">section 14</a>) tells every neuron its <strong>error</strong>: how much higher its sum should have been. This section answers the question that comes next. Given that a neuron's sum should go up by some amount, how should it change each of its <em>incoming</em> weights to get there?</p>
+
+<h3>Each weight's leverage is its input</h3>
+<p>A neuron's sum is <code>w[0]·x[0] + w[1]·x[1] + …</code>. Suppose you change just one weight, <code>w[i]</code>, by a small amount Δ. The sum then changes by <code>Δ × x[i]</code>, and nothing else changes. So the input <code>x[i]</code> is that weight's <strong>leverage</strong> over the sum:</p>
+<ul>
+<li>A <strong>large input</strong> means a small change to its weight moves the sum a lot.</li>
+<li>An input of <strong>0</strong> means its weight has no effect on this example at all, so there is no point changing it.</li>
+<li>A <strong>negative input</strong> means the weight must go <em>down</em> to push the sum up.</li>
+</ul>
+<p>Gradient descent moves every weight <strong>in proportion to its leverage</strong>:</p>
+<div class="formula" style="white-space:normal">nudge to w[i] = learning rate × error × x[i]</div>
+<p>This is the most efficient way to spend a given amount of weight change. Weights that can do a lot get big nudges, weights that can do little get small ones, and weights that can do nothing are left alone. It is also exactly the rule from <a href="#nudge">section 12</a>: the error at the neuron it feeds, times the value it comes from. Try it below. Drag the target, press <b>Step</b>, and watch each weight's share of the change.</p>
+
+<figure id="fig-15">
+<svg id="gdSvg" viewBox="0 0 720 320" role="img" aria-label="One neuron with four inputs; the nudge to each incoming weight is the learning rate times the error times that weight's input"></svg>
+<div class="sliders">
+<label>target value for the sum = <b class="mono" id="gdTv">1.00</b><input type="range" id="gdT" min="-1" max="2" step="0.05" value="1"></label>
+<label>learning rate = <b class="mono" id="gdLv">0.10</b><input type="range" id="gdL" min="0.01" max="0.45" step="0.01" value="0.1"></label>
+</div>
+<div class="controls"><button type="button" id="gdStep">Step</button><button type="button" id="gdReset">Reset</button></div>
+<div class="bp-explain" id="gdExplain"></div>
+<figcaption><span class="fig-label">Fig. 15.</span> One neuron (identity activation) with four incoming synapses. Its error is target − sum. Each weight's nudge, shown as a purple bar, is learning rate × error × that synapse's input. The input of 2.0 gets the biggest nudge, the input of 0 gets none, and the input of −1.0 gets a negative nudge, because lowering that weight raises the sum. The gauge shows the sum now, the target, and where one step will land. Raise the learning rate past about 0.19 and the step overshoots the target. Past about 0.38 it overshoots so far that every step makes things worse.</figcaption>
+</figure>
+
+<p>The sum moves by <code>learning rate × error × (x[0]² + x[1]² + …)</code> in one step. Every term is positive, so a small enough step always moves the sum <em>towards</em> the target. That is the guarantee gradient descent gives: for a small enough step, the loss goes down. If the neuron has an activation such as sigmoid, the "error" here is the error at its <em>sum</em>, which already includes the activation's slope (<a href="#nudge">section 12</a>).</p>
+
+<h3>The landscape picture: many examples at once</h3>
+<p>One training example on its own is easy to satisfy, because lots of weight settings hit one target. Training uses many examples, and the weights have to suit all of them at once. For each example the error is worked out, and each weight's nudge is the <strong>sum of the nudges each example asks for</strong>. That combined nudge is the <strong>gradient</strong> (with its sign flipped, so it points downhill).</p>
+<p>With two weights you can draw this as a map. Each point is one setting of (w[0], w[1]). The rings are contour lines of equal loss, like a hiking map of a valley. The loss is lowest at the cross. A gradient-descent step goes straight downhill, at right angles to the contour line it is on, and its size is the learning rate times the slope.</p>
+
+<figure id="fig-16">
+<svg id="glSvg" viewBox="0 0 720 390" role="img" aria-label="Contour map of the loss over two weights, with gradient descent steps moving downhill to the minimum, and a chart of loss per step"></svg>
+<div class="sliders">
+<label>learning rate = <b class="mono" id="glLv">0.30</b><input type="range" id="glL" min="0.05" max="1.2" step="0.05" value="0.3"></label>
+<div class="controls" style="margin:0;align-items:flex-end"><button type="button" id="glStep">Step</button><button type="button" id="glRun">Run 25 steps</button><button type="button" id="glReset">Reset</button></div>
+</div>
+<div class="bp-explain" id="glExplain"></div>
+<figcaption><span class="fig-label">Fig. 16.</span> Gradient descent for one neuron with two weights, trained on two examples. The purple arrow is the next step: learning rate × the combined nudge, at right angles to the contour lines. The chart on the right shows the loss after each step. Click anywhere on the map to start from there. With a small learning rate the path creeps down to the minimum. Around 0.8 it zigzags across the narrow valley. Above about 1.08 each step overshoots further and the loss explodes, which is the "too large" learning rate from <a href="#lr">Choosing the learning rate</a>.</figcaption>
+</figure>
+
+<p>So the decision about each incoming weight never involves the weight's meaning. It uses two numbers that are already there: the error at the neuron (how much its sum should change) and the input on that synapse (how much leverage the weight has). Add up what every example asks for, scale by the learning rate, step, and repeat.</p>
+
+<!-- ============================================================ -->
+<h2 id="backprop">14. Backpropagation, step by step</h2>
 
 <p>This section runs one full training step on a network small enough to show every number: the forward pass, the loss, the error at every neuron, and the nudge for every trained synapse. The network is a one-number slice of attention. A query token's input <code>x</code> makes a query <code>q</code>, a key token's input <code>y</code> makes a key <code>k</code>, and a multiply block works out the score <code>s = q × k</code>. (With one number per vector, d<sub>k</sub> = 1 and there is no √d<sub>k</sub> to divide by.)</p>
 
@@ -1191,7 +1237,7 @@ synapse_out.weight += grad * hidden_value       <span class="c"># × value it co
 <h3>How the loss is worked out</h3>
 <p>The loss measures how wrong the prediction was. When the right answer is "yes", the loss is <code>−ln p</code>, the same formula your skip-gram code uses for a real pair. If the model was sure and right (p = 1) the loss is 0. As p falls towards 0 the loss climbs steeply, so a confident wrong answer costs far more than a hesitant one:</p>
 
-<figure id="fig-15">
+<figure id="fig-17">
 <svg viewBox="0 0 720 250" role="img" aria-label="The loss minus log p against p: zero when p is 1, rising steeply as p approaches 0">
 <line x1="70" y1="204" x2="690" y2="204" class="axis"/><line x1="70" y1="24" x2="70" y2="204" class="axis"/>
 <line x1="70" y1="159.0" x2="690" y2="159.0" class="axis" opacity="0.5"/>
@@ -1222,13 +1268,13 @@ synapse_out.weight += grad * hidden_value       <span class="c"># × value it co
 <text x="466.8" y="91.5" font-size="11.5" text-anchor="start" class="muted">dashed: if the right answer</text>
 <text x="466.8" y="106.5" font-size="11.5" text-anchor="start" class="muted">were "no", loss = −ln(1 − p)</text>
 </svg>
-<figcaption><span class="fig-label">Fig. 15.</span> The loss for a "yes" answer, <code>−ln p</code>. The example below starts at p = 0.556, a loss of 0.587. Training is the search for weights that push p towards 1 and the loss towards 0. The slope of this curve at the current point is where the backward pass starts.</figcaption>
+<figcaption><span class="fig-label">Fig. 17.</span> The loss for a "yes" answer, <code>−ln p</code>. The example below starts at p = 0.556, a loss of 0.587. Training is the search for weights that push p towards 1 and the loss towards 0. The slope of this curve at the current point is where the backward pass starts.</figcaption>
 </figure>
 
 <h3>The whole step, one stage at a time</h3>
 <p>Press <b>Next</b> to move through the stages. Values flow left to right in the forward pass. <span class="c-o">Errors</span> flow right to left in the backward pass and appear in the orange tags under each neuron. A neuron's error is <em>how much higher its sum should have been</em>, as defined in <a href="#nudge">section 12</a>. Then <span class="c-s">nudges</span> appear on the trained synapses. After "Apply and re-run", Next starts another round with the new weights, so you can watch the loss fall.</p>
 
-<figure id="fig-16">
+<figure id="fig-18">
 <div class="controls" id="bpControls">
 <button type="button" id="bpBack">◀ Back</button>
 <button type="button" id="bpNext">Next ▶</button>
@@ -1254,7 +1300,7 @@ synapse_out.weight += grad * hidden_value       <span class="c"># × value it co
 <div><small>loss</small><b id="bpLoss">—</b></div>
 <div><small>loss by round</small><svg id="bpSpark" viewBox="0 0 120 28" style="width:100%;height:28px"></svg></div>
 </div>
-<figcaption><span class="fig-label">Fig. 16.</span> One training step of backpropagation, every number shown. The blue and green synapses are the trained weights, a one-column W_Q (into q) and W_K (into k). The grey synapses are the multiply block's fixed wiring: they pass the error back but are never changed. Switch the right answer to "no" and every error changes sign, so the same machinery pushes p down instead.</figcaption>
+<figcaption><span class="fig-label">Fig. 18.</span> One training step of backpropagation, every number shown. The blue and green synapses are the trained weights, a one-column W_Q (into q) and W_K (into k). The grey synapses are the multiply block's fixed wiring: they pass the error back but are never changed. Switch the right answer to "no" and every error changes sign, so the same machinery pushes p down instead.</figcaption>
 </figure>
 
 <p>Three rules did all the work, and each one only looked at a single neuron or synapse:</p>
@@ -1270,9 +1316,9 @@ synapse_out.weight += grad * hidden_value       <span class="c"># × value it co
 <ul>
 <li><strong>How it is chosen.</strong> Usually by experiment. Run short trainings at values spaced on a log scale (0.1, 0.03, 0.01, 0.003, …) and keep the one whose loss falls fastest without becoming unstable. Another option is a range test, which raises the rate during one short run and picks a value just below where the loss shoots up. Known defaults help: your skip-gram trainer uses word2vec's, and Transformers trained with the Adam optimiser often start around 0.0003. Bigger models need smaller rates: GPT-3 used 0.0006 for its smallest model and 0.00006 for its largest.</li>
 <li><strong>It changes during training.</strong> Your <code>SkipGramTrainer</code> lowers it in a straight line from 0.025 to 0.001 across the epochs: big steps early to cover ground, small steps late to settle into the bottom instead of bouncing around it. Transformers also add a <em>warm-up</em>. The rate starts near 0 and rises over the first few thousand steps, because gradients from random weights are unreliable, and then it decays.</li>
-<li><strong>Partly automatic.</strong> Plain gradient descent, as in <code>train_pair</code> and Fig. 16, uses one rate for every weight. Adam keeps a running average of each weight's recent gradients and scales each weight's step by them, so a weight with large or noisy gradients takes smaller steps. A person still picks the overall rate.</li>
+<li><strong>Partly automatic.</strong> Plain gradient descent, as in <code>train_pair</code> and Fig. 18, uses one rate for every weight. Adam keeps a running average of each weight's recent gradients and scales each weight's step by them, so a weight with large or noisy gradients takes smaller steps. A person still picks the overall rate.</li>
 </ul>
-<p class="muted" style="font-size:0.92rem">The 0.5 in Fig. 16 is large on purpose, so the changes are visible within a few rounds. That suits this tiny network but would be far too big for a real model.</p>
+<p class="muted" style="font-size:0.92rem">The 0.5 in Fig. 18 is large on purpose, so the changes are visible within a few rounds. That suits this tiny network but would be far too big for a real model.</p>
 
 <details class="deeper"><summary>All the numbers for round 1<span class="tag">table</span></summary><div class="body">
 <div class="table-wrap"><table>
@@ -1299,7 +1345,7 @@ synapse_out.weight += grad * hidden_value       <span class="c"># × value it co
 </div></details>
 
 <!-- ============================================================ -->
-<h2 id="meaning">14. Why should any of this mean anything?</h2>
+<h2 id="meaning">15. Why should any of this mean anything?</h2>
 
 <p>It's fair to ask why a chain of matrix products, dot products and softmaxes should produce numbers that mean anything. The basic answer: <strong>nobody expects the operations themselves to produce meaningful numbers.</strong> With random weights they don't: the output is noise. The meaning comes from <strong>training</strong>, which adjusts the weights until the numbers <em>are</em> useful. The operations only decide what kinds of things the weights <em>could</em> learn. The belief rests on three ideas, and your skip-gram code already shows all three at work.</p>
 
@@ -1342,7 +1388,7 @@ synapse_out.weight += grad * hidden_value       <span class="c"># × value it co
 <p><strong>You've already watched this happen.</strong> Your skip-gram network starts with random vectors. Nothing in a dot product or a sigmoid says "king" should end up near "queen". The guess-the-neighbour game, repeated thousands of times, pushes them together because that is what lowers the loss. Attention is the same principle with more flexible machinery: random weights + an architecture that can express useful operations + a prediction task + many gradient steps = weights that reflect the structure of the data.</p>
 
 <!-- ============================================================ -->
-<h2 id="real">15. How real code does it</h2>
+<h2 id="real">16. How real code does it</h2>
 
 <p>Nobody builds attention out of <code>Neuron</code> objects in practice. Real code writes it as a few matrix operations, roughly <code>softmax(Q @ K.T / sqrt(d_k) + mask) @ V</code>, and a GPU runs thousands of multiply-adds at once. That is the same arithmetic as the network above, packed differently:</p>
 <ul>
@@ -1355,7 +1401,7 @@ synapse_out.weight += grad * hidden_value       <span class="c"># × value it co
 <div class="callout"><p><strong>Another way to see Step 4.</strong> Look at the score neuron again, using the "gated synapse" idea from Step 2. For a given sentence, <code>k_cat</code> acts like a set of <em>synapse weights</em> that <code>q_sat</code> passes through. Skip-gram's output neuron does exactly this with <code>context_vector</code>. The difference is that in skip-gram those weights are learned once and stored, while in attention they are <em>recomputed for every sentence</em> from the tokens themselves. That is why attention is often described as a layer whose weights depend on the input.</p></div>
 
 <!-- ============================================================ -->
-<h2 id="summary">16. Summary: maths to neurons</h2>
+<h2 id="summary">17. Summary: maths to neurons</h2>
 
 <div class="table-wrap"><table>
 <thead><tr><th>In the formula</th><th>As neurons and synapses</th><th>Trained?</th></tr></thead>
@@ -1611,7 +1657,183 @@ synapse_out.weight += grad * hidden_value       <span class="c"># × value it co
   run();
 })();
 
-// Fig. 16: backpropagation, step by step
+// Fig. 15: one neuron's incoming weights
+(function () {
+  const X = [2.0, 0.5, 0.0, -1.0], W0 = [0.2, 0.4, 0.7, 0.3];
+  let W = W0.slice(), target = 1.0, lr = 0.1;
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.getElementById("gdSvg");
+  const el = (n, a, p = svg) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); p.appendChild(e); return e; };
+  const f = (v, d = 2) => { let s = v.toFixed(d); if (/^-0\.0*$/.test(s)) s = s.slice(1); return s.replace("-", "−"); };
+  const sg = (v, d = 3) => (v >= 0 ? "+" : "") + f(v, d);
+  const YS = [52, 122, 192, 262], NX = 290, NY = 157, R = 26;
+  const G = { x: 372, top: 40, bot: 274, min: -1, max: 2 };
+  const gy = v => G.bot - (Math.max(G.min, Math.min(G.max, v)) - G.min) / (G.max - G.min) * (G.bot - G.top);
+  const lines = [], wl = [], rows = [], bars = [];
+  YS.forEach((y, i) => {
+    const L = Math.hypot(NX - 60, NY - y), ux = (NX - 60) / L, uy = (NY - y) / L;
+    lines.push(el("line", { x1: 60 + ux * 20, y1: y + uy * 20, x2: NX - ux * (R + 3), y2: NY - uy * (R + 3), class: "syn syn-q", "stroke-width": 2, "marker-end": "url(#mk-q)" }));
+  });
+  YS.forEach((y, i) => {
+    const lx = 60 + (NX - 60) * 0.5, ly = y + (NY - y) * 0.5;
+    el("rect", { x: lx - 30, y: ly - 9, width: 60, height: 18, rx: 4, class: "wlabel" });
+    wl.push(el("text", { x: lx, y: ly + 4, "text-anchor": "middle", "font-size": 11, class: "mono" }));
+    el("circle", { cx: 60, cy: y, r: 20, class: "n n-x" });
+    el("text", { x: 60, y: y + 4, "text-anchor": "middle", "font-size": 11, class: "mono" }).textContent = f(X[i], 1);
+    el("text", { x: 60, y: y - 25, "text-anchor": "middle", "font-size": 10.5, class: "mono muted" }).textContent = `x[${i}]`;
+  });
+  el("circle", { cx: NX, cy: NY, r: R, class: "n n-s" });
+  const sumT = el("text", { x: NX, y: NY + 4, "text-anchor": "middle", "font-size": 12, class: "mono" });
+  el("text", { x: NX, y: NY - 34, "text-anchor": "middle", "font-size": 11.5, class: "mono" }).textContent = "sum";
+  const eg = el("g", {});
+  el("rect", { x: NX - 40, y: NY + 32, width: 80, height: 18, rx: 9, class: "err-pill" }, eg);
+  const errT = el("text", { x: NX, y: NY + 45, "text-anchor": "middle", "font-size": 11, class: "mono err-text" }, eg);
+  // gauge
+  el("line", { x1: G.x, y1: G.top, x2: G.x, y2: G.bot, class: "axis", "stroke-width": 2 });
+  [-1, 0, 1, 2].forEach(v => { el("line", { x1: G.x - 4, y1: gy(v), x2: G.x + 4, y2: gy(v), class: "axis" }); el("text", { x: G.x - 8, y: gy(v) + 4, "text-anchor": "end", "font-size": 10, class: "muted" }).textContent = v; });
+  el("text", { x: G.x, y: 24, "text-anchor": "middle", "font-size": 10.5, class: "muted" }).textContent = "gauge";
+  const tLine = el("line", { x1: G.x - 12, x2: G.x + 12, stroke: "var(--c-o)", "stroke-width": 2.5 });
+  const tTxt = el("text", { x: G.x + 16, "font-size": 10.5, fill: "var(--c-o)" }); tTxt.textContent = "target";
+  const nDot = el("circle", { cx: G.x, r: 5, fill: "none", stroke: "var(--c-s)", "stroke-width": 2 });
+  const nTxt = el("text", { x: G.x + 16, "font-size": 10.5, fill: "var(--c-s)" }); nTxt.textContent = "after step";
+  const cDot = el("circle", { cx: G.x, r: 5, fill: "var(--ink)" });
+  const cTxt = el("text", { x: G.x - 12, "font-size": 10.5, "text-anchor": "end" }); cTxt.textContent = "now";
+  // right panel
+  el("text", { x: 430, y: 22, "font-size": 12, "font-weight": 700 }).textContent = "nudge = lr × error × input";
+  el("line", { x1: 560, y1: 34, x2: 560, y2: 290, class: "axis" });
+  YS.forEach((y, i) => {
+    rows.push(el("text", { x: 430, y: y - 2, "font-size": 11, class: "mono" }));
+    bars.push(el("rect", { y: y + 6, height: 9, rx: 2, fill: "var(--c-s)" }));
+  });
+
+  function render() {
+    const sum = W.reduce((t, w, i) => t + w * X[i], 0), err = target - sum;
+    const n = X.map(x => lr * err * x), after = sum + n.reduce((t, d, i) => t + d * X[i], 0);
+    W.forEach((w, i) => { wl[i].textContent = "w " + f(w); });
+    sumT.textContent = f(sum, 3); errT.textContent = "error " + sg(err, 2);
+    tLine.setAttribute("y1", gy(target)); tLine.setAttribute("y2", gy(target)); tTxt.setAttribute("y", gy(target) + 4);
+    cDot.setAttribute("cy", gy(sum)); cTxt.setAttribute("y", gy(sum) + 4);
+    nDot.setAttribute("cy", gy(after)); nTxt.setAttribute("y", gy(after) + 14);
+    n.forEach((d, i) => {
+      rows[i].textContent = `w[${i}]: ${f(lr)} × ${sg(err, 2)} × ${f(X[i], 1)} = ${sg(d)}`;
+      const len = Math.min(140, Math.abs(d) * 300);
+      bars[i].setAttribute("x", d >= 0 ? 560 : 560 - len); bars[i].setAttribute("width", Math.max(len, 0.5));
+    });
+    const sx2 = X.reduce((t, x) => t + x * x, 0), k = lr * sx2;
+    let verdict = k < 1 ? "The step moves the sum part of the way to the target." : k < 1.0001 + 1e-9 && k > 0.9999 ? "This learning rate lands exactly on the target in one step." : k < 2 ? "<b>Overshoot:</b> the step jumps past the target, though it still ends up closer." : "<b>Too large:</b> the step overshoots so far that it ends up further from the target than it started.";
+    if (Math.abs(k - 1) < 0.03) verdict = "This learning rate lands almost exactly on the target in one step.";
+    document.getElementById("gdExplain").innerHTML =
+      `error = target − sum = ${f(target)} − ${f(sum, 3)} = <b>${sg(err)}</b>. Each weight's nudge is lr × error × its input (the purple bars).<br>` +
+      `The sum will change by lr × error × (x[0]² + x[1]² + x[2]² + x[3]²) = ${f(lr)} × ${sg(err)} × ${f(sx2)} = <b>${sg(after - sum)}</b>, to <b>${f(after, 3)}</b>. ${verdict}`;
+  }
+  document.getElementById("gdT").addEventListener("input", e => { target = +e.target.value; document.getElementById("gdTv").textContent = f(target); render(); });
+  document.getElementById("gdL").addEventListener("input", e => { lr = +e.target.value; document.getElementById("gdLv").textContent = f(lr); render(); });
+  document.getElementById("gdStep").addEventListener("click", () => {
+    const sum = W.reduce((t, w, i) => t + w * X[i], 0), err = target - sum;
+    W = W.map((w, i) => w + lr * err * X[i]); render();
+  });
+  document.getElementById("gdReset").addEventListener("click", () => { W = W0.slice(); render(); });
+  render();
+})();
+
+// Fig. 16: the loss landscape for two weights
+(function () {
+  const EX = [{ x: [1.0, 0.5], t: 1.0 }, { x: [0.2, 1.0], t: -0.5 }];
+  const START = [2.7, 1.5];
+  let w = START.slice(), path = [w.slice()], lr = 0.3;
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.getElementById("glSvg");
+  const el = (n, a, p = svg) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); p.appendChild(e); return e; };
+  const f = (v, d = 2) => { let s = v.toFixed(d); if (/^-0\.0*$/.test(s)) s = s.slice(1); return s.replace("-", "−"); };
+  const sg = (v, d = 3) => (v >= 0 ? "+" : "") + f(v, d);
+  const loss = w => EX.reduce((t, e) => t + 0.5 * (e.t - (w[0] * e.x[0] + w[1] * e.x[1])) ** 2, 0);
+  const errs = w => EX.map(e => e.t - (w[0] * e.x[0] + w[1] * e.x[1]));
+  const nudge = w => { const E = errs(w); return [0, 1].map(i => lr * EX.reduce((t, e, k) => t + E[k] * e.x[i], 0)); };
+  // the bowl: A = Σ x xᵀ, b = Σ t x, minimum w* = A⁻¹ b
+  const a = EX.reduce((t, e) => t + e.x[0] * e.x[0], 0), bb = EX.reduce((t, e) => t + e.x[0] * e.x[1], 0), d = EX.reduce((t, e) => t + e.x[1] * e.x[1], 0);
+  const b0 = EX.reduce((t, e) => t + e.t * e.x[0], 0), b1 = EX.reduce((t, e) => t + e.t * e.x[1], 0);
+  const det = a * d - bb * bb, WS = [(d * b0 - bb * b1) / det, (a * b1 - bb * b0) / det], LMIN = loss(WS);
+  const mid = (a + d) / 2, rad = Math.sqrt(((a - d) / 2) ** 2 + bb * bb), L1 = mid + rad, L2 = mid - rad;
+  const theta = Math.atan2(L1 - a, bb);
+  const P = { x: 14, y: 14, s: 362 }, R0 = [-1.6, 3.2], R1 = [-2.6, 2.2], k = P.s / (R0[1] - R0[0]);
+  const px = v => P.x + (v - R0[0]) * k, py = v => P.y + P.s - (v - R1[0]) * k;
+  const defs = el("defs", {});
+  const cp = el("clipPath", { id: "glClip" }, defs); el("rect", { x: P.x, y: P.y, width: P.s, height: P.s }, cp);
+  el("marker", { id: "mk-gl", viewBox: "0 0 10 10", refX: 8, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto" }, defs).innerHTML = '<path d="M0,0 L10,5 L0,10 z" fill="var(--c-s)"/>';
+  el("rect", { x: P.x, y: P.y, width: P.s, height: P.s, fill: "var(--surface)", stroke: "var(--line)" });
+  const g = el("g", { "clip-path": "url(#glClip)" });
+  [0.02, 0.08, 0.2, 0.4, 0.7, 1.1, 1.6, 2.3, 3.2, 4.4, 6].forEach((D, i) => {
+    el("ellipse", { cx: px(WS[0]), cy: py(WS[1]), rx: Math.sqrt(2 * D / L1) * k, ry: Math.sqrt(2 * D / L2) * k,
+      transform: `rotate(${-theta * 180 / Math.PI} ${px(WS[0])} ${py(WS[1])})`, fill: "none", stroke: "var(--c-s)", "stroke-width": 1, opacity: 0.25 + 0.05 * (10 - i) }, g);
+  });
+  el("line", { x1: px(0), y1: P.y, x2: px(0), y2: P.y + P.s, class: "axis" }, g);
+  el("line", { x1: P.x, y1: py(0), x2: P.x + P.s, y2: py(0), class: "axis" }, g);
+  el("text", { x: P.x + P.s - 4, y: py(0) - 6, "text-anchor": "end", "font-size": 11, class: "mono muted" }, g).textContent = "w[0] →";
+  el("text", { x: px(0) + 6, y: P.y + 14, "font-size": 11, class: "mono muted" }, g).textContent = "↑ w[1]";
+  el("path", { d: `M${px(WS[0]) - 6} ${py(WS[1]) - 6} l12 12 m0 -12 l-12 12`, stroke: "var(--ink)", "stroke-width": 2.2 }, g);
+  el("text", { x: px(WS[0]) + 9, y: py(WS[1]) + 16, "font-size": 11, "font-weight": 600 }, g).textContent = "lowest loss";
+  const pathEl = el("polyline", { fill: "none", stroke: "var(--ink)", "stroke-width": 1.6 }, g);
+  const dotsG = el("g", {}, g);
+  const arrow = el("line", { stroke: "var(--c-s)", "stroke-width": 3, "marker-end": "url(#mk-gl)" }, g);
+  const cur = el("circle", { r: 6, fill: "var(--c-o)", stroke: "var(--surface)", "stroke-width": 1.5 }, g);
+  const hit = el("rect", { x: P.x, y: P.y, width: P.s, height: P.s, fill: "transparent", style: "cursor:crosshair" });
+  hit.addEventListener("click", ev => {
+    const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+    const q = pt.matrixTransform(svg.getScreenCTM().inverse());
+    w = [R0[0] + (q.x - P.x) / k, R1[0] + (P.y + P.s - q.y) / k]; path = [w.slice()]; render();
+  });
+  // loss chart
+  const C = { x: 440, y: 40, w: 260, h: 280 };
+  el("text", { x: C.x, y: 26, "font-size": 12, "font-weight": 700 }).textContent = "loss after each step";
+  el("line", { x1: C.x, y1: C.y + C.h, x2: C.x + C.w, y2: C.y + C.h, class: "axis" });
+  el("line", { x1: C.x, y1: C.y, x2: C.x, y2: C.y + C.h, class: "axis" });
+  el("text", { x: C.x + C.w, y: C.y + C.h + 18, "text-anchor": "end", "font-size": 11, class: "muted" }).textContent = "step →";
+  const chart = el("polyline", { fill: "none", stroke: "var(--c-o)", "stroke-width": 2 });
+  const minLine = el("line", { x1: C.x, x2: C.x + C.w, stroke: "var(--ink)", "stroke-dasharray": "3 3", "stroke-width": 1 });
+  const minTxt = el("text", { x: C.x + C.w, "text-anchor": "end", "font-size": 10.5, class: "muted" }); minTxt.textContent = "lowest possible";
+  const yMaxT = el("text", { x: C.x - 6, y: C.y + 4, "text-anchor": "end", "font-size": 10, class: "muted" });
+  const offT = el("text", { x: C.x + C.w, y: C.y + 16, "text-anchor": "end", "font-size": 11, "font-weight": 600, fill: "var(--c-o)" });
+  el("text", { x: C.x - 6, y: C.y + C.h + 4, "text-anchor": "end", "font-size": 10, class: "muted" }).textContent = "0";
+
+  function render() {
+    const pts = path.map(p => `${px(p[0])},${py(p[1])}`).join(" ");
+    pathEl.setAttribute("points", pts);
+    dotsG.innerHTML = "";
+    path.slice(0, -1).forEach(p => el("circle", { cx: px(p[0]), cy: py(p[1]), r: 2.6, fill: "var(--ink)" }, dotsG));
+    cur.setAttribute("cx", px(w[0])); cur.setAttribute("cy", py(w[1]));
+    const n = nudge(w);
+    arrow.setAttribute("x1", px(w[0])); arrow.setAttribute("y1", py(w[1]));
+    arrow.setAttribute("x2", px(w[0] + n[0])); arrow.setAttribute("y2", py(w[1] + n[1]));
+    const Ls = path.map(loss), top = Math.max(Ls[0], 0.5) * 1.1;
+    const cx = i => C.x + (Ls.length > 1 ? i / Math.max(25, Ls.length - 1) : 0) * C.w;
+    const cy = v => C.y + C.h - Math.min(v, top) / top * C.h;
+    chart.setAttribute("points", Ls.map((v, i) => `${cx(i)},${cy(v)}`).join(" "));
+    minLine.setAttribute("y1", cy(LMIN)); minLine.setAttribute("y2", cy(LMIN)); minTxt.setAttribute("y", cy(LMIN) - 5);
+    yMaxT.textContent = f(top, 1);
+    const worst = Math.max(...Ls);
+    offT.textContent = worst > top ? `↑ off the chart: loss now ${isFinite(Ls[Ls.length - 1]) ? Ls[Ls.length - 1].toPrecision(3) : "∞"}` : "";
+    const E = errs(w), L = loss(w), diverged = !isFinite(L) || Math.abs(w[0]) > 1e3;
+    document.getElementById("glExplain").innerHTML = diverged
+      ? `<b>Diverged.</b> With a learning rate of ${f(lr)} each step overshoots the valley by more than the last, and the weights fly off. Lower the learning rate and press Reset.`
+      : `Step ${path.length - 1}: w = (${f(w[0], 3)}, ${f(w[1], 3)}), loss = <b>${f(L, 4)}</b> (lowest possible ${f(LMIN, 4)}).<br>` +
+        `Example 1: x = (1.0, 0.5), target 1.0, error ${sg(E[0])}. &nbsp;Example 2: x = (0.2, 1.0), target −0.5, error ${sg(E[1])}.<br>` +
+        `Nudge to w[0] = lr × (${sg(E[0])} × 1.0 + ${sg(E[1])} × 0.2) = <b>${sg(n[0])}</b>. &nbsp;Nudge to w[1] = lr × (${sg(E[0])} × 0.5 + ${sg(E[1])} × 1.0) = <b>${sg(n[1])}</b>.<br>` +
+        `Each example asks for the Fig. 15 rule, error × input, and the step adds up what they ask for. That pair of nudges is the purple arrow.`;
+  }
+  function step() { const n = nudge(w); w = [w[0] + n[0], w[1] + n[1]]; path.push(w.slice()); render(); }
+  document.getElementById("glStep").addEventListener("click", step);
+  let timer = null;
+  document.getElementById("glRun").addEventListener("click", () => {
+    if (timer) return;
+    let i = 0;
+    timer = setInterval(() => { if (i++ >= 25 || Math.abs(w[0]) > 1e3) { clearInterval(timer); timer = null; return; } step(); }, 90);
+  });
+  document.getElementById("glReset").addEventListener("click", () => { if (timer) { clearInterval(timer); timer = null; } w = START.slice(); path = [w.slice()]; render(); });
+  document.getElementById("glL").addEventListener("input", e => { lr = +e.target.value; document.getElementById("glLv").textContent = f(lr); render(); });
+  render();
+})();
+
+// Fig. 18: backpropagation, step by step
 (function () {
   const X = [1.0, 0.5], Y = [0.5, 1.0], LR = 0.5;
   const W0 = { q0: 0.4, q1: -0.2, k0: 0.3, k1: 0.6 };
@@ -1735,8 +1957,8 @@ synapse_out.weight += grad * hidden_value       <span class="c"># × value it co
       case 0: return `Two tokens: a query token with input x = [1.00, 0.50] and a key token with input y = [0.50, 1.00]. The four <span class="c-q">blue</span> and <span class="c-k">green</span> synapses are the trained weights, a one-column W_Q and W_K. Everything grey is the multiply block's fixed wiring. Press <b>Next</b> to run the forward pass.`;
       case 1: return `<b>Values flow left to right.</b> Each neuron adds weight × value over its incoming synapses, then applies its activation, exactly as <code>Neuron.forward</code> does.<br>q = ${f(W.q0, 2)}×1.00 + ${f(W.q1, 2)}×0.50 = <b>${f(v.q)}</b><br>k = ${f(W.k0, 2)}×0.50 + ${f(W.k1, 2)}×1.00 = <b>${f(v.k)}</b><br>(q + k)² = ${f(v.zp)}² = ${f(v.sqp, 4)}, &nbsp;(q − k)² = ${f(v.zm)}² = ${f(v.sqm, 4)}<br>s = ¼×${f(v.sqp, 4)} − ¼×${f(v.sqm, 4)} = <b>${f(v.s)}</b> (= q × k)<br>p = sigmoid(${f(v.s)}) = <b>${f(v.p)}</b>`;
       case 2: return yes
-        ? `<b>The loss.</b> The right answer is "yes": this query should attend to this key (label 1). The model said yes with probability p = ${f(v.p)}. Loss = −ln p = −ln(${f(v.p)}) = <b>${f(v.loss)}</b>. It would be 0 only if p were 1 (Fig. 15).`
-        : `<b>The loss.</b> The right answer is "no": this query should <em>not</em> attend to this key (label 0). The model gave "yes" a probability of p = ${f(v.p)}, so "no" got ${f(1 - v.p)}. Loss = −ln(1 − p) = <b>${f(v.loss)}</b>, the dashed curve in Fig. 15.`;
+        ? `<b>The loss.</b> The right answer is "yes": this query should attend to this key (label 1). The model said yes with probability p = ${f(v.p)}. Loss = −ln p = −ln(${f(v.p)}) = <b>${f(v.loss)}</b>. It would be 0 only if p were 1 (Fig. 17).`
+        : `<b>The loss.</b> The right answer is "no": this query should <em>not</em> attend to this key (label 0). The model gave "yes" a probability of p = ${f(v.p)}, so "no" got ${f(1 - v.p)}. Loss = −ln(1 − p) = <b>${f(v.loss)}</b>, the dashed curve in Fig. 17.`;
       case 3: return `<b>Error at the output.</b> Error = how much higher the neuron's sum should have been. For a sigmoid output with −ln loss it comes out simply: error = label − p = ${label} − ${f(v.p)} = <b>${sg(d.dp)}</b>. (${yes ? "The slope of −ln p is −1/p and the sigmoid's slope is p(1 − p). Multiplied, they leave 1 − p." : "The slopes of −ln(1 − p) and the sigmoid multiply to leave −p."}) This is the <code>grad</code> your <code>train_pair</code> computes, before it multiplies by lr. ${d.dp >= 0 ? "Positive: the score should have been higher." : "Negative: the score should have been lower."}`;
       case 4: return `<b>Back through s.</b> The error moves back along the synapse s → p:<br>error at s = weight (1) × error at p (${sg(d.dp)}) × slope of identity (1) = <b>${sg(d.ds)}</b>`;
       case 5: return `<b>Back through the squares.</b> Each square neuron takes the weight of its synapse into s times the error at s, then multiplies by its own slope. The slope of square at input z is 2z.<br>(q + k)²: (+¼ × ${sg(d.ds)}) × (2 × ${f(v.zp)}) = <b>${sg(d.dsqp)}</b><br>(q − k)²: (−¼ × ${sg(d.ds)}) × (2 × ${f(v.zm)}) = <b>${sg(d.dsqm)}</b>`;
